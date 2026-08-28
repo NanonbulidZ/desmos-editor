@@ -1154,12 +1154,15 @@
     }
 
     const sign = b >= 0 ? '+' : '';
-    return `y = ${r(m)}x${sign}${r(b)}\\left\\{${Math.min(x1,x2)}\\le x\\le${Math.max(x1,x2)}\\right\\}`;
+    return `y = ${rd(m)}x${sign}${rd(b)}\\left\\{${Math.min(x1,x2)}\\le x\\le${Math.max(x1,x2)}\\right\\}`;
   }
 
   function r(v) {
-    // Round to 1 decimal, remove trailing zeros
     return parseFloat(v.toFixed(1));
+  }
+
+  function rd(v) {
+    return parseFloat(v.toFixed(6));
   }
 
   function simplifyPath(pts) {

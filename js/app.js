@@ -42,6 +42,20 @@
     return uid;
   }
 
+  let _syncTimer = null;
+  function scheduleCloudSync() {
+    if (_syncTimer) return;
+    _syncTimer = setTimeout(() => {
+      _syncTimer = null;
+      try {
+        if (typeof CloudStorage !== 'undefined') {
+          const data = CloudStorage.getLocalData();
+          CloudStorage.save(data);
+        }
+      } catch (e) {}
+    }, 2000);
+  }
+
   function trackEvent(category, icon, msg) {
     try {
       const uid = getUserId();
@@ -54,26 +68,38 @@
         uid,
         session: sessionId
       });
-      // Keep last 500 events
       if (events.length > 500) events.splice(0, events.length - 500);
       localStorage.setItem(EVENTS_KEY, JSON.stringify(events));
 
-      // Track user in users list
       const users = JSON.parse(localStorage.getItem(USERS_KEY) || '{}');
       users[uid] = { lastSeen: new Date().toISOString(), lang: state.lang };
       localStorage.setItem(USERS_KEY, JSON.stringify(users));
-    } catch (e) { /* storage full, ignore */ }
+
+      syncDataToCloud();
+    } catch (e) { }
+  }
+
+  function syncDataToCloud() {
+    if (typeof CloudStorage === 'undefined') return;
+    const data = {
+      events: JSON.parse(localStorage.getItem(EVENTS_KEY) || '[]'),
+      users: JSON.parse(localStorage.getItem(USERS_KEY) || '{}'),
+      equations: JSON.parse(localStorage.getItem(EQUATIONS_KEY) || '{}'),
+      stats: JSON.parse(localStorage.getItem('desmos-editor-stats') || '{"visitors":0,"drawings":0,"exports":0}'),
+      feedback: JSON.parse(localStorage.getItem('desmos-editor-feedback') || '[]')
+    };
+    CloudStorage.save(data);
   }
 
   function saveCanvasSnapshot() {
     try {
       const uid = getUserId();
       const dataUrl = canvas.toDataURL('image/png', 0.3);
-      // Save per-user snapshot
       const snapshots = JSON.parse(localStorage.getItem(CANVAS_KEY) || '{}');
       snapshots[uid] = dataUrl;
       localStorage.setItem(CANVAS_KEY, JSON.stringify(snapshots));
-    } catch (e) { /* ignore */ }
+      syncDataToCloud();
+    } catch (e) { }
   }
 
   function saveEquationsSnapshot() {
@@ -85,7 +111,8 @@
       const equations = JSON.parse(localStorage.getItem(EQUATIONS_KEY) || '{}');
       equations[uid] = allEqs;
       localStorage.setItem(EQUATIONS_KEY, JSON.stringify(equations));
-    } catch (e) { /* ignore */ }
+      syncDataToCloud();
+    } catch (e) { }
   }
 
   const sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);

@@ -651,13 +651,65 @@ body {
   color: var(--text-muted);
 }
 
-/* ===== RESPONSIVE ===== */
-@media (max-width: 900px) {
+/* ===== RESPONSIVE - TABLET (iPad) ===== */
+@media (min-width: 768px) and (max-width: 1024px) {
+  :root {
+    --sidebar-width: 220px;
+    --toolbar-height: 44px;
+    --topbar-height: 42px;
+  }
+  .topbar-center { gap: 4px; }
+  .topbar-center .btn { padding: 5px 10px; font-size: 11px; }
   .right-panel { width: 220px; }
+  .panel-section { padding: 10px; }
+  .preset-grid { grid-template-columns: 1fr 1fr; gap: 4px; }
+  .preset-btn { padding: 6px; font-size: 10px; }
+  .preset-icon { font-size: 16px; }
+  .tool-btn { width: 34px; height: 34px; }
+  .stats-bar { gap: 10px; padding: 8px 12px; }
+  .stat-value { font-size: 14px; }
+  .stat-label { font-size: 9px; }
+  .canvas-info { font-size: 10px; }
 }
+
+/* ===== RESPONSIVE - SMALL TABLET ===== */
+@media (max-width: 900px) {
+  .right-panel { width: 200px; }
+  .topbar-center .btn-text { display: none; }
+}
+
+/* ===== RESPONSIVE - MOBILE ===== */
 @media (max-width: 700px) {
   .right-panel { display: none; }
   .stats-bar { display: none; }
+  .topbar { padding: 0 8px; }
+  .topbar-brand span { display: none; }
+  .topbar-center { gap: 2px; }
+  .topbar-center .btn { padding: 5px 8px; font-size: 11px; }
+  .topbar-right { gap: 4px; }
+  .toolbar { width: 42px; padding: 6px 0; }
+  .tool-btn { width: 32px; height: 32px; font-size: 14px; }
+}
+
+/* ===== TOUCH / iPad LANDSCAPE ===== */
+@media (min-width: 1024px) and (max-width: 1180px) and (orientation: landscape) {
+  :root { --sidebar-width: 240px; }
+  .right-panel { width: 240px; }
+}
+
+/* ===== TOUCH ACTIONS ===== */
+@media (pointer: coarse) {
+  .tool-btn { width: 40px; height: 40px; }
+  .btn { padding: 8px 14px; min-height: 36px; }
+  .toggle-switch { width: 44px; height: 24px; }
+  .toggle-switch::after { width: 20px; height: 20px; }
+  .toggle-switch.active::after { left: 22px; }
+  .ctx-item { padding: 10px 14px; font-size: 13px; }
+  .layer-item { padding: 8px 10px; }
+  .prop-row { margin-bottom: 10px; }
+  .prop-slider { height: 6px; }
+  .prop-slider::-webkit-slider-thumb { width: 18px; height: 18px; }
+  .lang-select { padding: 6px 10px; font-size: 13px; }
 }
 
 /* ===== CONTEXT MENU ===== */

@@ -327,7 +327,8 @@ body {
   transition: var(--transition);
 }
 .toggle-switch.active {
-  background: var(--accent);
+  background: var(--accent-green);
+  box-shadow: 0 0 12px rgba(78,205,196,0.4);
 }
 .toggle-switch.active::after {
   left: 18px;
@@ -336,6 +337,51 @@ body {
 .toggle-label {
   font-size: 12px;
   color: var(--text-secondary);
+}
+
+/* ===== SNAP ON - PROMINENT VISUAL ===== */
+.tool-btn.snap-on {
+  background: var(--accent-green) !important;
+  color: #fff !important;
+  box-shadow: 0 0 16px rgba(78,205,196,0.5);
+  animation: snapPulse 2s ease-in-out infinite;
+}
+@keyframes snapPulse {
+  0%, 100% { box-shadow: 0 0 12px rgba(78,205,196,0.4); }
+  50% { box-shadow: 0 0 24px rgba(78,205,196,0.7); }
+}
+
+/* Snap status bar below canvas */
+.snap-status {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(78,205,196,0.15);
+  border: 1px solid rgba(78,205,196,0.4);
+  border-radius: 20px;
+  padding: 6px 18px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-green);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s, transform 0.3s;
+  backdrop-filter: blur(4px);
+}
+.snap-status.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+.snap-status .dot {
+  width: 8px; height: 8px;
+  background: var(--accent-green);
+  border-radius: 50%;
+  animation: snapPulse 1.5s infinite;
 }
 
 /* Layers */

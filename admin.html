@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Console - Desmos Editor</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0e17;
+      --bg2: #111827;
+      --bg3: #1a2332;
+      --bg4: #243044;
+      --text: #e2e8f0;
+      --text2: #94a3b8;
+      --text3: #64748b;
+      --accent: #e94560;
+      --green: #22c55e;
+      --blue: #3b82f6;
+      --yellow: #eab308;
+      --cyan: #06b6d4;
+      --border: #1e293b;
+      --border2: #334155;
+      --radius: 8px;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      overflow-x: hidden;
+    }
+
+    /* Header */
+    .header {
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .header-left { display: flex; align-items: center; gap: 12px; }
+    .header-left .logo {
+      width: 32px; height: 32px;
+      background: var(--accent);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 900; font-size: 14px;
+    }
+    .header-left h1 { font-size: 16px; font-weight: 700; }
+    .header-left h1 span { color: var(--accent); }
+    .header-right { display: flex; align-items: center; gap: 12px; }
+    .live-dot {
+      width: 8px; height: 8px;
+      background: var(--green);
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34,197,94,0.4); }
+      50% { opacity: 0.7; box-shadow: 0 0 0 6px rgba(34,197,94,0); }
+    }
+    .live-label { font-size: 12px; color: var(--green); font-weight: 600; }
+    .refresh-btn {
+      padding: 6px 14px;
+      background: var(--bg3);
+      border: 1px solid var(--border2);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 12px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .refresh-btn:hover { background: var(--bg4); }
+    .back-link {
+      color: var(--text2);
+      text-decoration: none;
+      font-size: 12px;
+      padding: 6px 12px;
+      border: 1px solid var(--border2);
+      border-radius: 6px;
+    }
+    .back-link:hover { background: var(--bg3); color: var(--text); }
+
+    /* Stats Row */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      padding: 20px 24px;
+    }
+    .stat-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+    }
+    .stat-card .label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat-card .value { font-size: 28px; font-weight: 700; margin-top: 4px; }
+    .stat-card .value.red { color: var(--accent); }
+    .stat-card .value.green { color: var(--green); }
+    .stat-card .value.blue { color: var(--blue); }
+    .stat-card .value.yellow { color: var(--yellow); }
+    .stat-card .value.cyan { color: var(--cyan); }
+    .stat-card .sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
+
+    /* Main Grid */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 360px;
+      gap: 0;
+      padding: 0 24px 24px;
+      min-height: calc(100vh - 200px);
+    }
+
+    /* Canvas Preview */
+    .preview-section {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin-right: 16px;
+    }
+    .preview-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .preview-header h2 { font-size: 13px; font-weight: 600; }
+    .preview-header .badge {
+      font-size: 10px;
+      padding: 2px 8px;
+      background: rgba(34,197,94,0.15);
+      color: var(--green);
+      border-radius: 10px;
+    }
+    .preview-body {
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .canvas-preview {
+      width: 100%;
+      aspect-ratio: 16/10;
+      background: #0d1117;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      position: relative;
+      overflow: hidden;
+    }
+    .canvas-preview canvas {
+      width: 100%;
+      height: 100%;
+    }
+    .canvas-preview .no-data {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      color: var(--text3);
+      font-size: 13px;
+      text-align: center;
+    }
+    .canvas-preview .no-data .icon { font-size: 32px; margin-bottom: 8px; }
+
+    /* Live Equation */
+    .equation-preview {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .equation-preview::-webkit-scrollbar { width: 4px; }
+    .equation-preview::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+    .eq-line {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: var(--cyan);
+      padding: 4px 8px;
+      background: rgba(6,182,212,0.08);
+      border-radius: 4px;
+      margin-bottom: 4px;
+      word-break: break-all;
+    }
+
+    /* Right Panel */
+    .right-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* Activity Feed */
+    .feed-section {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .feed-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .feed-header h2 { font-size: 13px; font-weight: 600; }
+    .feed-count {
+      font-size: 11px;
+      padding: 2px 8px;
+      background: var(--bg4);
+      border-radius: 10px;
+      color: var(--text2);
+    }
+    .feed-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+    .feed-list::-webkit-scrollbar { width: 4px; }
+    .feed-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+    .feed-item {
+      padding: 8px 12px;
+      border-radius: 6px;
+      margin-bottom: 4px;
+      font-size: 12px;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      transition: background 0.15s;
+    }
+    .feed-item:hover { background: var(--bg3); }
+    .feed-item .time {
+      color: var(--text3);
+      font-size: 10px;
+      font-family: 'JetBrains Mono', monospace;
+      white-space: nowrap;
+      min-width: 50px;
+    }
+    .feed-item .icon { font-size: 14px; min-width: 20px; text-align: center; }
+    .feed-item .msg { color: var(--text2); flex: 1; line-height: 1.4; }
+    .feed-item .msg strong { color: var(--text); font-weight: 600; }
+
+    .feed-item.tool { border-left: 2px solid var(--blue); }
+    .feed-item.shape { border-left: 2px solid var(--green); }
+    .feed-item.action { border-left: 2px solid var(--yellow); }
+    .feed-item.export { border-left: 2px solid var(--accent); }
+    .feed-item.feedback { border-left: 2px solid var(--cyan); }
+    .feed-item.system { border-left: 2px solid var(--text3); }
+
+    /* Feedback Panel */
+    .feedback-section {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      max-height: 300px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .feedback-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+    .feedback-item {
+      padding: 10px 12px;
+      background: var(--bg3);
+      border-radius: 6px;
+      margin-bottom: 8px;
+      font-size: 12px;
+    }
+    .feedback-item .fb-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .feedback-item .fb-name { color: var(--blue); font-weight: 600; }
+    .feedback-item .fb-time { color: var(--text3); font-size: 10px; font-family: 'JetBrains Mono', monospace; }
+    .feedback-item .fb-msg { color: var(--text2); line-height: 1.4; }
+    .feedback-item .fb-email { color: var(--text3); font-size: 10px; margin-top: 4px; }
+
+    /* Clear button */
+    .clear-btn {
+      padding: 4px 10px;
+      background: transparent;
+      border: 1px solid var(--border2);
+      border-radius: 4px;
+      color: var(--text3);
+      font-size: 10px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .clear-btn:hover { background: var(--bg4); color: var(--text); }
+
+    /* Empty state */
+    .empty-state {
+      padding: 40px 20px;
+      text-align: center;
+      color: var(--text3);
+    }
+    .empty-state .icon { font-size: 28px; margin-bottom: 8px; }
+    .empty-state p { font-size: 12px; }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      .main-grid { grid-template-columns: 1fr; }
+      .preview-section { margin-right: 0; margin-bottom: 16px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-left">
+      <div class="logo">A</div>
+      <h1><span>Admin</span> Console</h1>
+      <div class="live-dot"></div>
+      <span class="live-label">LIVE</span>
+    </div>
+    <div class="header-right">
+      <button class="refresh-btn" onclick="loadAllData()">↻ Refresh</button>
+      <a href="index.html" class="back-link">← Back to Editor</a>
+    </div>
+  </div>
+
+  <!-- STATS -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="label">Total Visitors</div>
+      <div class="value red" id="statVisitors">0</div>
+      <div class="sub" id="statVisitorsSub">No data yet</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Shapes Drawn</div>
+      <div class="value green" id="statDrawings">0</div>
+      <div class="sub" id="statDrawingsSub">Total ever created</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Desmos Exports</div>
+      <div class="value blue" id="statExports">0</div>
+      <div class="sub" id="statExportsSub">Equations exported</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Events Today</div>
+      <div class="value yellow" id="statEvents">0</div>
+      <div class="sub" id="statEventsSub">Actions tracked</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Feedback Messages</div>
+      <div class="value cyan" id="statFeedback">0</div>
+      <div class="sub" id="statFeedbackSub">User messages</div>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main-grid">
+
+    <!-- Canvas Preview + Equations -->
+    <div class="preview-section">
+      <div class="preview-header">
+        <h2>Live Canvas Preview</h2>
+        <span class="badge" id="previewBadge">WAITING</span>
+      </div>
+      <div class="preview-body">
+        <div class="canvas-preview" id="canvasPreview">
+          <div class="no-data" id="noData">
+            <div class="icon">📐</div>
+            <p>Waiting for user activity...</p>
+            <p style="font-size:11px;margin-top:4px;">Canvas snapshots will appear here</p>
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Live Equations</div>
+        <div class="equation-preview" id="equationPreview">
+          <div class="empty-state" id="eqEmpty"><p>No equations yet</p></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Activity + Feedback -->
+    <div class="right-panel">
+
+      <!-- Activity Feed -->
+      <div class="feed-section">
+        <div class="feed-header">
+          <h2>Activity Feed</h2>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span class="feed-count" id="feedCount">0 events</span>
+            <button class="clear-btn" onclick="clearEvents()">Clear</button>
+          </div>
+        </div>
+        <div class="feed-list" id="feedList">
+          <div class="empty-state" id="feedEmpty">
+            <div class="icon">📡</div>
+            <p>Listening for events...</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Feedback -->
+      <div class="feedback-section">
+        <div class="feed-header">
+          <h2>User Feedback</h2>
+          <span class="feed-count" id="fbCount">0 messages</span>
+        </div>
+        <div class="feedback-list" id="feedbackList">
+          <div class="empty-state" id="fbEmpty">
+            <p>No feedback yet</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    // ===== DATA LOADING =====
+    const FEEDBACK_KEY = 'desmos-editor-feedback';
+    const EVENTS_KEY = 'desmos-editor-events';
+    const STATS_KEY = 'desmos-editor-stats';
+    const CANVAS_KEY = 'desmos-editor-canvas-snapshot';
+    const EQUATIONS_KEY = 'desmos-editor-equations';
+
+    let allEvents = [];
+    let lastEventCount = 0;
+
+    function loadAllData() {
+      loadStats();
+      loadEvents();
+      loadFeedback();
+      loadCanvasSnapshot();
+      loadEquations();
+    }
+
+    // ===== STATS =====
+    function loadStats() {
+      try {
+        const stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
+        document.getElementById('statVisitors').textContent = stats.visitors || 0;
+        document.getElementById('statDrawings').textContent = stats.drawings || 0;
+        document.getElementById('statExports').textContent = stats.exports || 0;
+
+        const today = new Date().toDateString();
+        const todayEvents = allEvents.filter(e => new Date(e.ts).toDateString() === today);
+        document.getElementById('statEvents').textContent = todayEvents.length;
+
+        const feedback = JSON.parse(localStorage.getItem(FEEDBACK_KEY) || '[]');
+        document.getElementById('statFeedback').textContent = feedback.length;
+
+        document.getElementById('statVisitorsSub').textContent = `Since first visit`;
+        document.getElementById('statDrawingsSub').textContent = `${stats.drawings || 0} total shapes`;
+        document.getElementById('statExportsSub').textContent = `${stats.exports || 0} equations sent`;
+        document.getElementById('statEventsSub').textContent = `${todayEvents.length} today`;
+        document.getElementById('statFeedbackSub').textContent = `${feedback.length} messages received`;
+      } catch (e) {
+        console.error('Stats load error:', e);
+      }
+    }
+
+    // ===== EVENTS =====
+    function loadEvents() {
+      try {
+        allEvents = JSON.parse(localStorage.getItem(EVENTS_KEY) || '[]');
+        document.getElementById('feedCount').textContent = `${allEvents.length} events`;
+
+        const today = new Date().toDateString();
+        const todayEvents = allEvents.filter(e => new Date(e.ts).toDateString() === today);
+        document.getElementById('statEvents').textContent = todayEvents.length;
+
+        renderEvents(allEvents.slice(-100).reverse());
+      } catch (e) {
+        console.error('Events load error:', e);
+      }
+    }
+
+    function renderEvents(events) {
+      const list = document.getElementById('feedList');
+      const empty = document.getElementById('feedEmpty');
+
+      if (events.length === 0) {
+        empty.style.display = 'block';
+        return;
+      }
+      empty.style.display = 'none';
+
+      list.innerHTML = '';
+      events.forEach(ev => {
+        const item = document.createElement('div');
+        item.className = `feed-item ${ev.category || 'system'}`;
+        const time = new Date(ev.ts);
+        const timeStr = time.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        item.innerHTML = `
+          <span class="time">${timeStr}</span>
+          <span class="icon">${ev.icon || '•'}</span>
+          <span class="msg">${ev.msg}</span>
+        `;
+        list.appendChild(item);
+      });
+    }
+
+    // ===== FEEDBACK =====
+    function loadFeedback() {
+      try {
+        const feedback = JSON.parse(localStorage.getItem(FEEDBACK_KEY) || '[]');
+        document.getElementById('fbCount').textContent = `${feedback.length} messages`;
+        document.getElementById('statFeedback').textContent = feedback.length;
+
+        const list = document.getElementById('feedbackList');
+        const empty = document.getElementById('fbEmpty');
+
+        if (feedback.length === 0) {
+          empty.style.display = 'block';
+          return;
+        }
+        empty.style.display = 'none';
+        list.innerHTML = '';
+
+        feedback.slice().reverse().forEach(fb => {
+          const item = document.createElement('div');
+          item.className = 'feedback-item';
+          const time = new Date(fb.timestamp);
+          const timeStr = time.toLocaleString();
+          item.innerHTML = `
+            <div class="fb-header">
+              <span class="fb-name">${fb.name || 'Anonymous'}</span>
+              <span class="fb-time">${timeStr}</span>
+            </div>
+            <div class="fb-msg">${escapeHtml(fb.message)}</div>
+            ${fb.email ? `<div class="fb-email">📧 ${escapeHtml(fb.email)}</div>` : ''}
+          `;
+          list.appendChild(item);
+        });
+      } catch (e) {
+        console.error('Feedback load error:', e);
+      }
+    }
+
+    // ===== CANVAS SNAPSHOT =====
+    function loadCanvasSnapshot() {
+      try {
+        const snapshot = localStorage.getItem(CANVAS_KEY);
+        const preview = document.getElementById('canvasPreview');
+        const noData = document.getElementById('noData');
+        const badge = document.getElementById('previewBadge');
+
+        if (snapshot) {
+          noData.style.display = 'none';
+          badge.textContent = 'LIVE';
+          badge.style.background = 'rgba(34,197,94,0.15)';
+          badge.style.color = '#22c55e';
+
+          // Remove old canvas/img
+          const oldImg = preview.querySelector('img');
+          if (oldImg) oldImg.remove();
+
+          const img = document.createElement('img');
+          img.src = snapshot;
+          img.style.width = '100%';
+          img.style.height = '100%';
+          img.style.objectFit = 'contain';
+          img.style.borderRadius = '6px';
+          preview.appendChild(img);
+        } else {
+          noData.style.display = 'block';
+          badge.textContent = 'WAITING';
+          badge.style.background = 'rgba(234,179,8,0.15)';
+          badge.style.color = '#eab308';
+        }
+      } catch (e) {
+        console.error('Canvas snapshot error:', e);
+      }
+    }
+
+    // ===== EQUATIONS =====
+    function loadEquations() {
+      try {
+        const eqs = JSON.parse(localStorage.getItem(EQUATIONS_KEY) || '[]');
+        const preview = document.getElementById('equationPreview');
+        const empty = document.getElementById('eqEmpty');
+
+        if (eqs.length === 0) {
+          empty.style.display = 'block';
+          return;
+        }
+        empty.style.display = 'none';
+        preview.innerHTML = '';
+
+        eqs.forEach(eq => {
+          const div = document.createElement('div');
+          div.className = 'eq-line';
+          div.textContent = eq;
+          preview.appendChild(div);
+        });
+      } catch (e) {
+        console.error('Equations load error:', e);
+      }
+    }
+
+    // ===== HELPERS =====
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function clearEvents() {
+      localStorage.removeItem(EVENTS_KEY);
+      allEvents = [];
+      document.getElementById('feedList').innerHTML = '';
+      document.getElementById('feedEmpty').style.display = 'block';
+      document.getElementById('feedCount').textContent = '0 events';
+      document.getElementById('statEvents').textContent = '0';
+    }
+
+    // ===== AUTO REFRESH =====
+    loadAllData();
+    setInterval(loadAllData, 2000);
+
+    // ===== STORAGE EVENT (cross-tab sync) =====
+    window.addEventListener('storage', (e) => {
+      if (e.key === EVENTS_KEY || e.key === STATS_KEY || e.key === FEEDBACK_KEY ||
+          e.key === CANVAS_KEY || e.key === EQUATIONS_KEY) {
+        loadAllData();
+      }
+    });
+  </script>
+</body>
+</html>

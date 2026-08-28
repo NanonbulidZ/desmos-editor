@@ -1,9 +1,67 @@
 // ========================================
 // Desmos Equation Editor - Main Application
+// Created by nanon dev & mimo opencode
 // ========================================
 
 (function() {
   'use strict';
+
+  // ===== DESMOS COORDINATE SYSTEM =====
+  // Desmos uses -10 to 10 on both axes
+  // World pixels are scaled so 20px = 1 Desmos unit
+  const DESMOS_RANGE = 10;
+  const DESMOS_SCALE = 20; // pixels per Desmos unit
+
+  function clampDesmos(v) {
+    return Math.max(-DESMOS_RANGE, Math.min(DESMOS_RANGE, v));
+  }
+
+  function worldToDesmos(wx, wy) {
+    const dx = wx / DESMOS_SCALE;
+    const dy = -wy / DESMOS_SCALE;
+    return { x: clampDesmos(dx), y: clampDesmos(dy) };
+  }
+
+  function desmosToWorld(dx, dy) {
+    return { x: dx * DESMOS_SCALE, y: -dy * DESMOS_SCALE };
+  }
+
+  // ===== EVENT TRACKING (for Admin Console) =====
+  const EVENTS_KEY = 'desmos-editor-events';
+  const CANVAS_KEY = 'desmos-editor-canvas-snapshot';
+  const EQUATIONS_KEY = 'desmos-editor-equations';
+
+  function trackEvent(category, icon, msg) {
+    try {
+      const events = JSON.parse(localStorage.getItem(EVENTS_KEY) || '[]');
+      events.push({
+        ts: new Date().toISOString(),
+        category,
+        icon,
+        msg,
+        session: sessionId
+      });
+      // Keep last 500 events
+      if (events.length > 500) events.splice(0, events.length - 500);
+      localStorage.setItem(EVENTS_KEY, JSON.stringify(events));
+    } catch (e) { /* storage full, ignore */ }
+  }
+
+  function saveCanvasSnapshot() {
+    try {
+      const dataUrl = canvas.toDataURL('image/png', 0.3);
+      localStorage.setItem(CANVAS_KEY, dataUrl);
+    } catch (e) { /* ignore */ }
+  }
+
+  function saveEquationsSnapshot() {
+    try {
+      const eqs = state.shapes.map(s => shapeToLatex(s)).filter(l => l);
+      localStorage.setItem(EQUATIONS_KEY, JSON.stringify(eqs));
+    } catch (e) { /* ignore */ }
+  }
+
+  const sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
 
   // ===== STATE =====
   const state = {
@@ -73,7 +131,6 @@
     document.querySelectorAll('[data-i18n-tooltip]').forEach(el => {
       el.setAttribute('data-tooltip', t(el.getAttribute('data-i18n-tooltip')));
     });
-    // Update page title
     document.title = t('app_title') + ' - Desmos Editor';
   }
 
@@ -163,11 +220,11 @@
     };
   }
 
-  // ===== GRID DRAWING =====
+  // ===== GRID + DESMOS BOUNDS =====
   function drawGrid() {
     if (!state.gridVisible) return;
     const size = state.snapSize * state.zoom;
-    if (size < 4) return; // Too dense, don't draw
+    if (size < 4) return;
 
     ctx.save();
     ctx.strokeStyle = state.snapEnabled ? 'rgba(93,173,226,0.12)' : 'rgba(255,255,255,0.04)';
@@ -188,7 +245,7 @@
     ctx.stroke();
 
     // Draw axes
-    if (state.zoom >= 0.5) {
+    if (state.zoom >= 0.3) {
       ctx.strokeStyle = state.snapEnabled ? 'rgba(93,173,226,0.25)' : 'rgba(255,255,255,0.08)';
       ctx.lineWidth = 1.5;
       const origin = worldToScreen(0, 0);
@@ -198,42 +255,107 @@
       ctx.moveTo(origin.x, 0);
       ctx.lineTo(origin.x, canvasHeight);
       ctx.stroke();
+
+      // Draw axis labels
+      ctx.fillStyle = 'rgba(255,255,255,0.25)';
+      ctx.font = '10px Inter, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('x', canvasWidth - 14, origin.y - 6);
+      ctx.textAlign = 'right';
+      ctx.fillText('y', origin.x + 12, 14);
     }
 
+    // Draw Desmos bounds (-10 to 10) as a highlighted rectangle
+    drawDesmosBounds();
+
     ctx.restore();
+  }
+
+  function drawDesmosBounds() {
+    const tl = worldToScreen(-DESMOS_RANGE * DESMOS_SCALE, -DESMOS_RANGE * DESMOS_SCALE);
+    const br = worldToScreen(DESMOS_RANGE * DESMOS_SCALE, DESMOS_RANGE * DESMOS_SCALE);
+    const w = br.x - tl.x;
+    const h = br.y - tl.y;
+
+    // Light fill inside Desmos area
+    ctx.fillStyle = 'rgba(93,173,226,0.03)';
+    ctx.fillRect(tl.x, tl.y, w, h);
+
+    // Boundary border
+    ctx.strokeStyle = 'rgba(93,173,226,0.2)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 4]);
+    ctx.strokeRect(tl.x, tl.y, w, h);
+    ctx.setLineDash([]);
+
+    // Corner labels
+    if (state.zoom >= 0.3) {
+      ctx.fillStyle = 'rgba(93,173,226,0.35)';
+      ctx.font = '9px JetBrains Mono, monospace';
+      const corners = [
+        { x: tl.x + 3, y: tl.y + 12, text: `(-10, ${DESMOS_RANGE})` },
+        { x: br.x - 3, y: tl.y + 12, text: `(${DESMOS_RANGE}, ${DESMOS_RANGE})`, align: 'right' },
+        { x: tl.x + 3, y: br.y - 4, text: `(-10, -${DESMOS_RANGE})` },
+        { x: br.x - 3, y: br.y - 4, text: `(${DESMOS_RANGE}, -${DESMOS_RANGE})`, align: 'right' }
+      ];
+      corners.forEach(c => {
+        ctx.textAlign = c.align || 'left';
+        ctx.fillText(c.text, c.x, c.y);
+      });
+
+      // Tick marks at integer positions along axes
+      const origin = worldToScreen(0, 0);
+      ctx.fillStyle = 'rgba(255,255,255,0.2)';
+      ctx.font = '8px JetBrains Mono, monospace';
+      ctx.textAlign = 'center';
+      const step = DESMOS_SCALE * state.zoom;
+      // X axis ticks
+      for (let i = -DESMOS_RANGE; i <= DESMOS_RANGE; i++) {
+        if (i === 0) continue;
+        const sx = origin.x + i * step;
+        if (sx < tl.x || sx > br.x) continue;
+        ctx.fillText(i, sx, origin.y + 12);
+        ctx.beginPath();
+        ctx.moveTo(sx, origin.y - 3);
+        ctx.lineTo(sx, origin.y + 3);
+        ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+      // Y axis ticks
+      ctx.textAlign = 'right';
+      for (let i = -DESMOS_RANGE; i <= DESMOS_RANGE; i++) {
+        if (i === 0) continue;
+        const sy = origin.y - i * step;
+        if (sy < tl.y || sy > br.y) continue;
+        ctx.fillText(i, origin.x - 6, sy + 3);
+        ctx.beginPath();
+        ctx.moveTo(origin.x - 3, sy);
+        ctx.lineTo(origin.x + 3, sy);
+        ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    }
   }
 
   // ===== SHAPE RENDERING =====
   function drawShape(shape, ctx2, selected) {
     ctx2.save();
     ctx2.globalAlpha = shape.opacity;
-
-    // Stroke
     ctx2.strokeStyle = shape.color;
     ctx2.lineWidth = shape.strokeWidth;
     ctx2.lineCap = 'round';
     ctx2.lineJoin = 'round';
 
     switch (shape.type) {
-      case 'path':
-        drawPath(shape, ctx2);
-        break;
-      case 'line':
-        drawLine(shape, ctx2);
-        break;
-      case 'rect':
-        drawRect(shape, ctx2);
-        break;
-      case 'ellipse':
-        drawEllipse(shape, ctx2);
-        break;
+      case 'path': drawPath(shape, ctx2); break;
+      case 'line': drawLine(shape, ctx2); break;
+      case 'rect': drawRect(shape, ctx2); break;
+      case 'ellipse': drawEllipse(shape, ctx2); break;
     }
 
-    // Selection indicator
-    if (selected) {
-      drawSelectionBox(shape, ctx2);
-    }
-
+    if (selected) drawSelectionBox(shape, ctx2);
     ctx2.restore();
   }
 
@@ -257,6 +379,14 @@
     ctx2.moveTo(s1.x, s1.y);
     ctx2.lineTo(s2.x, s2.y);
     ctx2.stroke();
+    // Draw endpoint dots
+    ctx2.fillStyle = shape.color;
+    ctx2.beginPath();
+    ctx2.arc(s1.x, s1.y, 3, 0, Math.PI * 2);
+    ctx2.fill();
+    ctx2.beginPath();
+    ctx2.arc(s2.x, s2.y, 3, 0, Math.PI * 2);
+    ctx2.fill();
   }
 
   function drawRect(shape, ctx2) {
@@ -296,7 +426,6 @@
     const s = worldToScreen(b.x, b.y);
     ctx2.strokeRect(s.x - 4, s.y - 4, b.w * state.zoom + 8, b.h * state.zoom + 8);
     ctx2.setLineDash([]);
-    // Draw handles
     const handles = [
       { x: b.x, y: b.y },
       { x: b.x + b.w, y: b.y },
@@ -313,7 +442,50 @@
       ctx2.fill();
       ctx2.stroke();
     });
+
+    // Show Desmos coordinates for selected shape
+    drawShapeDesmosCoords(shape, ctx2);
     ctx2.restore();
+  }
+
+  function drawShapeDesmosCoords(shape, ctx2) {
+    ctx2.font = '10px JetBrains Mono, monospace';
+    ctx2.textAlign = 'left';
+
+    const drawLabel = (wx, wy, label) => {
+      const dm = worldToDesmos(wx, wy);
+      const s = worldToScreen(wx, wy);
+      const text = `(${dm.x.toFixed(1)}, ${dm.y.toFixed(1)})`;
+      const tx = s.x + 8;
+      const ty = s.y - 8;
+      // Background
+      const metrics = ctx2.measureText(text);
+      ctx2.fillStyle = 'rgba(13,17,23,0.85)';
+      ctx2.fillRect(tx - 2, ty - 10, metrics.width + 4, 14);
+      ctx2.fillStyle = '#5dade2';
+      ctx2.fillText(text, tx, ty);
+    };
+
+    switch (shape.type) {
+      case 'line':
+        drawLabel(shape.x1, shape.y1, 'start');
+        drawLabel(shape.x2, shape.y2, 'end');
+        break;
+      case 'rect':
+        drawLabel(shape.x, shape.y, 'top-left');
+        drawLabel(shape.x + shape.width, shape.y + shape.height, 'bottom-right');
+        break;
+      case 'ellipse':
+        drawLabel(shape.cx - shape.rx, shape.cy, 'left');
+        drawLabel(shape.cx + shape.rx, shape.cy, 'right');
+        break;
+      case 'path':
+        if (shape.points.length > 0) {
+          drawLabel(shape.points[0].x, shape.points[0].y, 'start');
+          drawLabel(shape.points[shape.points.length - 1].x, shape.points[shape.points.length - 1].y, 'end');
+        }
+        break;
+    }
   }
 
   function smoothPath(points, smoothFactor) {
@@ -337,10 +509,8 @@
       case 'path': {
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         shape.points.forEach(p => {
-          minX = Math.min(minX, p.x);
-          minY = Math.min(minY, p.y);
-          maxX = Math.max(maxX, p.x);
-          maxY = Math.max(maxY, p.y);
+          minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+          maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
         });
         return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
       }
@@ -361,18 +531,16 @@
   // ===== MAIN RENDER =====
   function render() {
     ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-    // Background
     ctx.fillStyle = '#0d1117';
     ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
     drawGrid();
 
-    // Draw shapes
     state.shapes.forEach((shape, i) => {
       drawShape(shape, ctx, state.selectedShape === i);
     });
 
-    // Draw current drawing preview
+    // Current drawing preview
     if (state.isDrawing && state.currentPath.length > 0) {
       ctx.save();
       ctx.strokeStyle = state.color;
@@ -389,6 +557,12 @@
         ctx.lineTo(s.x, s.y);
       }
       ctx.stroke();
+      // Show Desmos coords at start and current
+      const dm0 = worldToDesmos(pts[0].x, pts[0].y);
+      const dm1 = worldToDesmos(pts[pts.length - 1].x, pts[pts.length - 1].y);
+      drawLiveDesmosLabel(s0.x, s0.y, dm0);
+      const sLast = worldToScreen(pts[pts.length - 1].x, pts[pts.length - 1].y);
+      drawLiveDesmosLabel(sLast.x, sLast.y, dm1);
       ctx.restore();
     }
 
@@ -406,10 +580,15 @@
       ctx.lineTo(s2.x, s2.y);
       ctx.stroke();
       ctx.setLineDash([]);
+      // Show Desmos coords at both endpoints
+      const dm1 = worldToDesmos(state.rectStart.x, state.rectStart.y);
+      const dm2 = worldToDesmos(state.mouseX, state.mouseY);
+      drawLiveDesmosLabel(s1.x, s1.y, dm1);
+      drawLiveDesmosLabel(s2.x, s2.y, dm2);
       ctx.restore();
     }
 
-    // Preview rect
+    // Preview rect / ellipse
     if ((state.tool === 'rect' || state.tool === 'ellipse') && state.rectStart) {
       ctx.save();
       ctx.strokeStyle = state.color;
@@ -430,17 +609,39 @@
         ctx.stroke();
       }
       ctx.setLineDash([]);
+      // Show Desmos coords at corners
+      const dm1 = worldToDesmos(state.rectStart.x, state.rectStart.y);
+      const dm2 = worldToDesmos(state.mouseX, state.mouseY);
+      drawLiveDesmosLabel(s1.x, s1.y, dm1);
+      drawLiveDesmosLabel(s2.x, s2.y, dm2);
       ctx.restore();
     }
 
-    // Crosshair info
     updateCanvasInfo();
+  }
+
+  function drawLiveDesmosLabel(sx, sy, dm) {
+    const text = `(${dm.x.toFixed(1)}, ${dm.y.toFixed(1)})`;
+    ctx.save();
+    ctx.font = '10px JetBrains Mono, monospace';
+    const metrics = ctx.measureText(text);
+    const tx = sx + 10;
+    const ty = sy - 10;
+    ctx.fillStyle = 'rgba(13,17,23,0.9)';
+    ctx.fillRect(tx - 3, ty - 11, metrics.width + 6, 15);
+    ctx.strokeStyle = 'rgba(93,173,226,0.5)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(tx - 3, ty - 11, metrics.width + 6, 15);
+    ctx.fillStyle = '#4ecdc4';
+    ctx.fillText(text, tx, ty);
+    ctx.restore();
   }
 
   function updateCanvasInfo() {
     const world = screenToWorld(state.mouseX, state.mouseY);
+    const dm = worldToDesmos(world.x, world.y);
     document.getElementById('infoCoords').textContent =
-      `X: ${Math.round(world.x)} Y: ${Math.round(world.y)}`;
+      `Pixel: ${Math.round(world.x)}, ${Math.round(world.y)}  |  Desmos: ${dm.x.toFixed(2)}, ${dm.y.toFixed(2)}`;
     document.getElementById('infoZoom').textContent =
       `Zoom: ${Math.round(state.zoom * 100)}%`;
   }
@@ -453,13 +654,9 @@
     canvas.addEventListener('mouseleave', onMouseUp);
     canvas.addEventListener('wheel', onWheel, { passive: false });
     canvas.addEventListener('contextmenu', onContextMenu);
-
-    // Touch events
     canvas.addEventListener('touchstart', onTouchStart, { passive: false });
     canvas.addEventListener('touchmove', onTouchMove, { passive: false });
     canvas.addEventListener('touchend', onTouchEnd);
-
-    // Keyboard
     document.addEventListener('keydown', onKeyDown);
   }
 
@@ -470,7 +667,6 @@
     const world = screenToWorld(sx, sy);
     const snapped = snapPoint(world.x, world.y);
 
-    // Pan with middle mouse
     if (e.button === 1) {
       state.isPanning = true;
       state.panStart = { x: e.clientX - state.panX, y: e.clientY - state.panY };
@@ -478,7 +674,6 @@
       return;
     }
 
-    // Pan tool
     if (state.tool === 'pan') {
       state.isPanning = true;
       state.panStart = { x: e.clientX - state.panX, y: e.clientY - state.panY };
@@ -486,7 +681,6 @@
       return;
     }
 
-    // Select tool
     if (state.tool === 'select') {
       const idx = findShapeAt(sx, sy);
       state.selectedShape = idx;
@@ -501,7 +695,6 @@
       return;
     }
 
-    // Zoom tools
     if (state.tool === 'zoomIn') {
       const newZoom = Math.min(5, state.zoom * 1.3);
       const ratio = newZoom / state.zoom;
@@ -521,7 +714,6 @@
       return;
     }
 
-    // Eraser
     if (state.tool === 'erase') {
       const idx = findShapeAt(sx, sy);
       if (idx !== null) {
@@ -536,7 +728,6 @@
       return;
     }
 
-    // Drawing tools
     state.isDrawing = true;
     state.currentPath = [];
 
@@ -573,7 +764,6 @@
       const snapped = snapPoint(world.x, world.y);
 
       if (state.tool === 'pen') {
-        // Thinning: skip if too close
         const last = state.currentPath[state.currentPath.length - 1];
         if (last) {
           const dist = Math.hypot(snapped.x - last.x, snapped.y - last.y);
@@ -608,6 +798,8 @@
 
     pushUndo();
 
+    const shapeNames = { path: 'Freehand path', line: 'Line', rect: 'Rectangle', ellipse: 'Ellipse' };
+
     if (state.tool === 'pen' && state.currentPath.length >= 2) {
       state.shapes.push({
         type: 'path',
@@ -621,13 +813,12 @@
         visible: true
       });
       state.stats.drawings++;
+      trackEvent('shape', '✏️', `Drew a <strong>freehand path</strong> (${state.currentPath.length} points)`);
     } else if (state.tool === 'line' && state.rectStart) {
       state.shapes.push({
         type: 'line',
-        x1: state.rectStart.x,
-        y1: state.rectStart.y,
-        x2: snapped.x,
-        y2: snapped.y,
+        x1: state.rectStart.x, y1: state.rectStart.y,
+        x2: snapped.x, y2: snapped.y,
         color: state.color,
         strokeWidth: state.strokeWidth,
         opacity: state.opacity,
@@ -635,12 +826,14 @@
         visible: true
       });
       state.stats.drawings++;
+      const d1 = worldToDesmos(state.rectStart.x, state.rectStart.y);
+      const d2 = worldToDesmos(snapped.x, snapped.y);
+      trackEvent('shape', '📏', `Drew a <strong>line</strong> from (${d1.x.toFixed(1)}, ${d1.y.toFixed(1)}) to (${d2.x.toFixed(1)}, ${d2.y.toFixed(1)})`);
     } else if (state.tool === 'rect' && state.rectStart) {
       const x = Math.min(state.rectStart.x, snapped.x);
       const y = Math.min(state.rectStart.y, snapped.y);
       state.shapes.push({
-        type: 'rect',
-        x, y,
+        type: 'rect', x, y,
         width: Math.abs(snapped.x - state.rectStart.x),
         height: Math.abs(snapped.y - state.rectStart.y),
         color: state.color,
@@ -651,12 +844,12 @@
         visible: true
       });
       state.stats.drawings++;
+      trackEvent('shape', '⬜', `Drew a <strong>rectangle</strong>`);
     } else if (state.tool === 'ellipse' && state.rectStart) {
       const cx = (state.rectStart.x + snapped.x) / 2;
       const cy = (state.rectStart.y + snapped.y) / 2;
       state.shapes.push({
-        type: 'ellipse',
-        cx, cy,
+        type: 'ellipse', cx, cy,
         rx: Math.abs(snapped.x - state.rectStart.x) / 2,
         ry: Math.abs(snapped.y - state.rectStart.y) / 2,
         color: state.color,
@@ -667,12 +860,16 @@
         visible: true
       });
       state.stats.drawings++;
+      trackEvent('shape', '⭕', `Drew an <strong>ellipse</strong>`);
     }
 
     state.rectStart = null;
     state.currentPath = [];
     saveStats();
+    saveCanvasSnapshot();
+    saveEquationsSnapshot();
     updateLayersList();
+    updateEquationsList();
     render();
   }
 
@@ -702,36 +899,22 @@
     }
   }
 
-  // Touch events
   function onTouchStart(e) {
     e.preventDefault();
     const touch = e.touches[0];
-    const mouseEvent = new MouseEvent('mousedown', {
-      clientX: touch.clientX,
-      clientY: touch.clientY,
-      button: 0
-    });
-    canvas.dispatchEvent(mouseEvent);
+    canvas.dispatchEvent(new MouseEvent('mousedown', { clientX: touch.clientX, clientY: touch.clientY, button: 0 }));
   }
-
   function onTouchMove(e) {
     e.preventDefault();
     const touch = e.touches[0];
-    const mouseEvent = new MouseEvent('mousemove', {
-      clientX: touch.clientX,
-      clientY: touch.clientY
-    });
-    canvas.dispatchEvent(mouseEvent);
+    canvas.dispatchEvent(new MouseEvent('mousemove', { clientX: touch.clientX, clientY: touch.clientY }));
   }
-
-  function onTouchEnd(e) {
-    const mouseEvent = new MouseEvent('mouseup', {});
-    canvas.dispatchEvent(mouseEvent);
+  function onTouchEnd() {
+    canvas.dispatchEvent(new MouseEvent('mouseup', {}));
   }
 
   function onKeyDown(e) {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-
     if (e.ctrlKey || e.metaKey) {
       if (e.key === 'z') { e.preventDefault(); undo(); }
       else if (e.key === 'y') { e.preventDefault(); redo(); }
@@ -797,25 +980,18 @@
         const baseY = shape.points[0].y;
         const offsetX = startPos.x + dx - baseX;
         const offsetY = startPos.y + dy - baseY;
-        shape.points.forEach(p => {
-          p.x += offsetX;
-          p.y += offsetY;
-        });
+        shape.points.forEach(p => { p.x += offsetX; p.y += offsetY; });
         break;
       }
       case 'line':
-        shape.x1 += dx;
-        shape.y1 += dy;
-        shape.x2 += dx;
-        shape.y2 += dy;
+        shape.x1 += dx; shape.y1 += dy;
+        shape.x2 += dx; shape.y2 += dy;
         break;
       case 'rect':
-        shape.x += dx;
-        shape.y += dy;
+        shape.x += dx; shape.y += dy;
         break;
       case 'ellipse':
-        shape.cx += dx;
-        shape.cy += dy;
+        shape.cx += dx; shape.cy += dy;
         break;
     }
   }
@@ -832,7 +1008,10 @@
     state.redoStack.push(JSON.parse(JSON.stringify(state.shapes)));
     state.shapes = state.undoStack.pop();
     state.selectedShape = null;
+    trackEvent('action', '↩', `<strong>Undo</strong> (${state.shapes.length} shapes remaining)`);
     updateLayersList();
+    updateEquationsList();
+    saveCanvasSnapshot();
     render();
   }
 
@@ -841,7 +1020,10 @@
     state.undoStack.push(JSON.parse(JSON.stringify(state.shapes)));
     state.shapes = state.redoStack.pop();
     state.selectedShape = null;
+    trackEvent('action', '↪', `<strong>Redo</strong> (${state.shapes.length} shapes)`);
     updateLayersList();
+    updateEquationsList();
+    saveCanvasSnapshot();
     render();
   }
 
@@ -852,6 +1034,8 @@
       btn.classList.toggle('active', btn.dataset.tool === tool);
     });
     canvas.style.cursor = getCursorForTool();
+    const toolNames = { select:'Select', pen:'Pen', line:'Line', rect:'Rectangle', ellipse:'Ellipse', erase:'Eraser', pan:'Pan', zoomIn:'Zoom In', zoomOut:'Zoom Out' };
+    trackEvent('tool', '🔧', `<strong>${toolNames[tool] || tool}</strong> tool selected`);
   }
 
   function getCursorForTool() {
@@ -869,6 +1053,7 @@
   function toggleGrid() {
     state.gridVisible = !state.gridVisible;
     document.getElementById('gridToggle').classList.toggle('active', state.gridVisible);
+    trackEvent('action', '⊞', `Grid <strong>${state.gridVisible ? 'shown' : 'hidden'}</strong>`);
     render();
   }
 
@@ -876,97 +1061,110 @@
     state.snapEnabled = !state.snapEnabled;
     document.getElementById('snapToggle').classList.toggle('active', state.snapEnabled);
     document.getElementById('snapSwitch').classList.toggle('active', state.snapEnabled);
+    // Update snap visual indicator
+    updateSnapVisual();
+    // Show/hide snap status bar
+    const snapStatus = document.getElementById('snapStatus');
+    if (snapStatus) {
+      snapStatus.classList.toggle('visible', state.snapEnabled);
+    }
+    trackEvent('action', '⊡', `Snap mode <strong>${state.snapEnabled ? 'ENABLED' : 'disabled'}</strong>`);
     render();
   }
 
-  // ===== EQUATION CONVERSION =====
+  function updateSnapVisual() {
+    const snapBtn = document.getElementById('snapToggle');
+    const snapLabel = document.getElementById('snapStatusLabel');
+    if (state.snapEnabled) {
+      snapBtn.classList.add('snap-on');
+      if (snapLabel) snapLabel.textContent = i18nData['snap_enable'] || 'Snap ON';
+    } else {
+      snapBtn.classList.remove('snap-on');
+      if (snapLabel) snapLabel.textContent = i18nData['snap_disable'] || 'Free Draw';
+    }
+    // Sync snap status bar visibility
+    const snapStatus = document.getElementById('snapStatus');
+    if (snapStatus) {
+      snapStatus.classList.toggle('visible', state.snapEnabled);
+    }
+  }
+
+  // ===== EQUATION CONVERSION (with Desmos bounds clamping) =====
   function shapeToLatex(shape) {
     switch (shape.type) {
       case 'line': {
-        const x1 = shape.x1 / 20;
-        const y1 = -shape.y1 / 20;
-        const x2 = shape.x2 / 20;
-        const y2 = -shape.y2 / 20;
-        const m = (y2 - y1) / (x2 - x1 || 0.001);
-        const b = y1 - m * x1;
+        const d1 = worldToDesmos(shape.x1, shape.y1);
+        const d2 = worldToDesmos(shape.x2, shape.y2);
+        const x1 = d1.x, y1 = d1.y, x2 = d2.x, y2 = d2.y;
+        // Vertical line
         if (Math.abs(x2 - x1) < 0.01) {
-          return `x = ${x1.toFixed(2)}`;
+          return `x = ${clampDesmos(x1).toFixed(2)}\\left\\{${Math.min(y1,y2).toFixed(2)}\\le y\\le${Math.max(y1,y2).toFixed(2)}\\right\\}`;
         }
-        return `y = ${m.toFixed(3)}x + ${b.toFixed(3)}`;
+        const m = (y2 - y1) / (x2 - x1);
+        const b = y1 - m * x1;
+        const xMin = Math.min(x1, x2);
+        const xMax = Math.max(x1, x2);
+        return `${m.toFixed(4)}x+${b.toFixed(4)}\\left\\{${xMin.toFixed(2)}\\le x\\le${xMax.toFixed(2)}\\right\\}`;
       }
       case 'rect': {
-        const x = shape.x / 20;
-        const y = -shape.y / 20;
-        const w = shape.width / 20;
-        const h = shape.height / 20;
-        const left = Math.min(x, x + w);
-        const right = Math.max(x, x + w);
-        const top = Math.min(y, y - h);
-        const bottom = Math.max(y, y - h);
-        return `\\operatorname{polygon}([(${left},${top}),(${right},${top}),(${right},${bottom}),(${left},${bottom})])`;
+        const tl = worldToDesmos(shape.x, shape.y);
+        const br = worldToDesmos(shape.x + shape.width, shape.y + shape.height);
+        const left = clampDesmos(Math.min(tl.x, br.x));
+        const right = clampDesmos(Math.max(tl.x, br.x));
+        const top = clampDesmos(Math.max(tl.y, br.y));
+        const bottom = clampDesmos(Math.min(tl.y, br.y));
+        return `\\operatorname{polygon}([(${left.toFixed(2)},${top.toFixed(2)}),(${right.toFixed(2)},${top.toFixed(2)}),(${right.toFixed(2)},${bottom.toFixed(2)}),(${left.toFixed(2)},${bottom.toFixed(2)})])`;
       }
       case 'ellipse': {
-        const cx = shape.cx / 20;
-        const cy = -shape.cy / 20;
-        const rx = Math.abs(shape.rx) / 20;
-        const ry = Math.abs(shape.ry) / 20;
-        return `\\frac{(x-${cx.toFixed(2)})^2}{${(rx*rx).toFixed(2)}} + \\frac{(y-${cy.toFixed(2)})^2}{${(ry*ry).toFixed(2)}} = 1`;
+        const d = worldToDesmos(shape.cx, shape.cy);
+        const cx = clampDesmos(d.x);
+        const cy = clampDesmos(d.y);
+        const rx = clampDesmos(Math.abs(shape.rx / DESMOS_SCALE));
+        const ry = clampDesmos(Math.abs(shape.ry / DESMOS_SCALE));
+        return `\\frac{(x-${cx.toFixed(2)})^2}{${(rx*rx).toFixed(4)}}+\\frac{(y-${cy.toFixed(2)})^2}{${(ry*ry).toFixed(4)}}=1\\left\\{${(-DESMOS_RANGE).toFixed(0)}\\le x\\le${DESMOS_RANGE.toFixed(0)}\\right\\}`;
       }
       case 'path': {
-        // Approximate path with parametric or line segments
-        const pts = shape.points.map(p => ({ x: p.x / 20, y: -p.y / 20 }));
+        const pts = shape.points.map(p => worldToDesmos(p.x, p.y));
         if (pts.length <= 2) {
-          return `y = ${pts[0].y.toFixed(2)} + (${(pts[pts.length-1].y - pts[0].y).toFixed(3)})/((${pts[pts.length-1].x - pts[0].x}).toFixed(3)) * (x - ${pts[0].x.toFixed(2)})`;
+          const p1 = pts[0], p2 = pts[pts.length - 1];
+          if (Math.abs(p2.x - p1.x) < 0.01) {
+            return `x = ${clampDesmos(p1.x).toFixed(2)}\\left\\{${Math.min(p1.y,p2.y).toFixed(2)}\\le y\\le${Math.max(p1.y,p2.y).toFixed(2)}\\right\\}`;
+          }
+          const m = (p2.y - p1.y) / (p2.x - p1.x);
+          const b = p1.y - m * p1.x;
+          const xMin = clampDesmos(Math.min(p1.x, p2.x));
+          const xMax = clampDesmos(Math.max(p1.x, p2.x));
+          return `${m.toFixed(4)}x+${b.toFixed(4)}\\left\\{${xMin.toFixed(2)}\\le x\\le${xMax.toFixed(2)}\\right\\}`;
         }
-        // Try polynomial fit for simple curves
-        const xs = pts.map(p => p.x);
-        const ys = pts.map(p => p.y);
-        const minX = Math.min(...xs);
-        const maxX = Math.max(...xs);
-        const range = maxX - minX || 1;
 
-        // Fit quadratic: y = ax^2 + bx + c
-        let a = 0, b = 0, c = 0;
-        try {
-          const n = pts.length;
-          let sx2 = 0, sx = 0, sy = 0, sxy = 0, sx2y = 0, sx3 = 0, sx4 = 0;
-          for (const p of pts) {
-            sx2 += p.x * p.x;
-            sx += p.x;
-            sy += p.y;
-            sxy += p.x * p.y;
-            sx2y += p.x * p.x * p.y;
-            sx3 += p.x * p.x * p.x;
-            sx4 += p.x * p.x * p.x * p.x;
-          }
-          // Simple least squares for y = ax^2 + bx + c
-          const det = n * (sx2 * sx4 - sx3 * sx3) - sx * (sx * sx4 - sx2 * sx3) + sx2 * (sx * sx3 - sx2 * sx2);
-          if (Math.abs(det) > 0.0001) {
-            a = (n * (sx2y * sx4 - sx3 * (sx2 * sy / n)) - sy * (sx * sx4 - sx2 * sx3) + sx2 * (sx * (sx2 * sy / n) - sx2y * n)) / det;
-            b = (n * (sx2 * (sx2y) - sx3 * sy) - sx * (n * (sx4 * sy / n) - sx3 * (sx2 * sy / n)) + sx2 * (sx * sy - sx2 * (sx2y))) / det;
-            c = sy / n - a * sx2 / n - b * sx / n;
-          }
-        } catch (e) {
-          // Fallback
+        // Fit quadratic y = ax^2 + bx + c
+        const n = pts.length;
+        let sx2 = 0, sx = 0, sy = 0, sxy = 0, sx2y = 0, sx3 = 0, sx4 = 0;
+        for (const p of pts) {
+          sx2 += p.x * p.x; sx += p.x; sy += p.y;
+          sxy += p.x * p.y; sx2y += p.x * p.x * p.y;
+          sx3 += p.x * p.x * p.x; sx4 += p.x * p.x * p.x * p.x;
         }
+        const det = n * (sx2 * sx4 - sx3 * sx3) - sx * (sx * sx4 - sx2 * sx3) + sx2 * (sx * sx3 - sx2 * sx2);
+        let a = 0, b = 0, c = sy / n;
+        if (Math.abs(det) > 0.0001) {
+          a = (n * (sx2y * sx4 - sx3 * (sx2 * sy / n)) - sy * (sx * sx4 - sx2 * sx3) + sx2 * (sx * (sx2 * sy / n) - sx2y * n)) / det;
+          b = (n * (sx2 * sx2y - sx3 * sy) - sx * (n * sx4 * sy / n - sx3 * sx2 * sy / n) + sx2 * (sx * sy - sx2 * sx2y)) / det;
+          c = sy / n - a * sx2 / n - b * sx / n;
+        }
+
+        const xMin = clampDesmos(Math.max(-DESMOS_RANGE, Math.min(...pts.map(p => p.x))));
+        const xMax = clampDesmos(Math.min(DESMOS_RANGE, Math.max(...pts.map(p => p.x))));
 
         if (Math.abs(a) > 0.001) {
-          return `y = ${a.toFixed(4)}x^2 + ${b.toFixed(4)}x + ${c.toFixed(4)}`;
+          return `${a.toFixed(6)}x^2+${b.toFixed(6)}x+${c.toFixed(4)}\\left\\{${xMin.toFixed(2)}\\le x\\le${xMax.toFixed(2)}\\right\\}`;
         }
-        // Line segments
-        const segments = [];
-        for (let i = 0; i < pts.length - 1; i++) {
-          const p1 = pts[i];
-          const p2 = pts[i + 1];
-          const m = (p2.y - p1.y) / (p2.x - p1.x || 0.001);
-          const bb = p1.y - m * p1.x;
-          if (Math.abs(p2.x - p1.x) < 0.01) {
-            segments.push(`x = ${p1.x.toFixed(2)}\\left\\{${Math.min(p1.y,p2.y).toFixed(1)}\\le y\\le${Math.max(p1.y,p2.y).toFixed(1)}\\right\\}`);
-          } else {
-            segments.push(`${m.toFixed(3)}x+${bb.toFixed(3)}\\left\\{${Math.min(p1.x,p2.x).toFixed(1)}\\le x\\le${Math.max(p1.x,p2.x).toFixed(1)}\\right\\}`);
-          }
-        }
-        return segments.join(', ');
+        // Linear fit
+        const avgX = sx / n;
+        const avgY = sy / n;
+        const linM = (sxy - n * avgX * avgY) / (sx2 - n * avgX * avgX || 0.001);
+        const linB = avgY - linM * avgX;
+        return `${linM.toFixed(4)}x+${linB.toFixed(4)}\\left\\{${xMin.toFixed(2)}\\le x\\le${xMax.toFixed(2)}\\right\\}`;
       }
       default:
         return '';
@@ -978,57 +1176,48 @@
       showToast(t('toast_export_failed'), 'error');
       return;
     }
-
     state.stats.exports++;
     saveStats();
-
-    // Copy all equations to clipboard as LaTeX
     const equations = state.shapes.map(s => shapeToLatex(s)).filter(l => l);
+    trackEvent('export', '📤', `Exported <strong>${equations.length} equation${equations.length !== 1 ? 's' : ''}</strong> to Desmos`);
 
-    // Try Desmos API integration
     if (window.Desmos) {
       try {
         const elt = document.getElementById('desmosCalculator');
         elt.style.display = 'block';
         const calc = Desmos.GraphingCalculator(elt, {
-          expressions: true,
-          settingsMenu: false,
-          zoomButtons: true
+          expressions: true, settingsMenu: false, zoomButtons: true,
+          keypad: false, border: true, lockViewport: false
         });
-        equations.forEach(eq => {
-          calc.setExpression({ latex: eq });
-        });
+        // Set graph bounds to match our -10 to 10
+        calc.setMathBounds({ left: -DESMOS_RANGE, right: DESMOS_RANGE, bottom: -DESMOS_RANGE, top: DESMOS_RANGE });
+        equations.forEach(eq => calc.setExpression({ latex: eq }));
         showToast(t('toast_exported'), 'success');
       } catch (e) {
-        // Fallback: copy to clipboard
-        navigator.clipboard.writeText(equations.join('\n')).then(() => {
-          showToast(t('toast_copied'), 'success');
-        });
+        copyToClipboard(equations.join('\n'));
       }
     } else {
-      // No Desmos API, copy LaTeX
-      navigator.clipboard.writeText(equations.join('\n')).then(() => {
-        showToast(t('toast_copied'), 'success');
-      }).catch(() => {
-        // Manual copy
-        const ta = document.createElement('textarea');
-        ta.value = equations.join('\n');
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
-        showToast(t('toast_copied'), 'success');
-      });
+      copyToClipboard(equations.join('\n'));
     }
+  }
+
+  function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+      showToast(t('toast_copied'), 'success');
+    }).catch(() => {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      showToast(t('toast_copied'), 'success');
+    });
   }
 
   function copyLaTeX() {
     const equations = state.shapes.map(s => shapeToLatex(s)).filter(l => l);
-    navigator.clipboard.writeText(equations.join('\n')).then(() => {
-      showToast(t('toast_copied'), 'success');
-    }).catch(() => {
-      showToast(t('toast_export_failed'), 'error');
-    });
+    copyToClipboard(equations.join('\n'));
   }
 
   function exportSVG() {
@@ -1054,13 +1243,10 @@
       }
     });
     svg += `</svg>`;
-
     const blob = new Blob([svg], { type: 'image/svg+xml' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = 'desmos-drawing.svg';
-    a.click();
+    a.href = url; a.download = 'desmos-drawing.svg'; a.click();
     URL.revokeObjectURL(url);
   }
 
@@ -1125,7 +1311,6 @@
     menu.style.top = y + 'px';
     menu.classList.add('active');
     menu.dataset.idx = idx;
-
     const closeMenu = (e) => {
       if (!menu.contains(e.target)) {
         menu.classList.remove('active');
@@ -1223,6 +1408,7 @@
     state.stats.drawings++;
     saveStats();
     updateLayersList();
+    updateEquationsList();
     render();
   }
 
@@ -1231,13 +1417,7 @@
     const data = {
       version: 1,
       shapes: state.shapes,
-      settings: {
-        zoom: state.zoom,
-        panX: state.panX,
-        panY: state.panY,
-        gridVisible: state.gridVisible,
-        snapEnabled: state.snapEnabled
-      }
+      settings: { zoom: state.zoom, panX: state.panX, panY: state.panY, gridVisible: state.gridVisible, snapEnabled: state.snapEnabled }
     };
     localStorage.setItem('desmos-editor-project', JSON.stringify(data));
     showToast(t('toast_saved'), 'success');
@@ -1256,6 +1436,7 @@
           state.snapEnabled = data.settings.snapEnabled || false;
         }
         updateLayersList();
+        updateEquationsList();
         render();
         showToast(t('toast_loaded'), 'success');
       }
@@ -1268,6 +1449,8 @@
     pushUndo();
     state.shapes = [];
     state.selectedShape = null;
+    trackEvent('action', '🗑', `<strong>Cleared all shapes</strong>`);
+    saveCanvasSnapshot();
     updateLayersList();
     updateEquationsList();
     render();
@@ -1276,7 +1459,6 @@
 
   // ===== FEEDBACK =====
   function sendFeedback(name, email, message) {
-    // Store feedback locally (in real app, send to server)
     const feedback = {
       name, email, message,
       timestamp: new Date().toISOString(),
@@ -1328,38 +1510,25 @@
   function init() {
     initCanvas();
     initInput();
-
-    // Load saved language
     loadLanguage(state.lang);
-
-    // Track visit
     trackVisit();
     updateStatsDisplay();
 
-    // Load saved project
     const hasProject = localStorage.getItem('desmos-editor-project');
-    if (hasProject) {
-      loadProject();
-    }
+    if (hasProject) loadProject();
 
-    // Tool buttons
     document.querySelectorAll('.tool-btn[data-tool]').forEach(btn => {
       btn.addEventListener('click', () => setTool(btn.dataset.tool));
     });
 
-    // Preset buttons
     document.querySelectorAll('.preset-btn[data-preset]').forEach(btn => {
       btn.addEventListener('click', () => addPreset(btn.dataset.preset));
     });
 
-    // Snap toggle
     document.getElementById('snapSwitch').addEventListener('click', toggleSnap);
     document.getElementById('snapToggle').addEventListener('click', toggleSnap);
-
-    // Grid toggle
     document.getElementById('gridToggle').addEventListener('click', toggleGrid);
 
-    // Action buttons
     document.getElementById('btnUndo').addEventListener('click', undo);
     document.getElementById('btnRedo').addEventListener('click', redo);
     document.getElementById('btnClear').addEventListener('click', clearAll);
@@ -1368,12 +1537,8 @@
     document.getElementById('btnExportSvg').addEventListener('click', exportSVG);
     document.getElementById('btnSave').addEventListener('click', saveProject);
 
-    // Language select
-    document.getElementById('langSelect').addEventListener('change', (e) => {
-      loadLanguage(e.target.value);
-    });
+    document.getElementById('langSelect').addEventListener('change', (e) => loadLanguage(e.target.value));
 
-    // Properties
     document.getElementById('propStrokeColor').addEventListener('input', applyPropertyChange);
     document.getElementById('propStrokeWidth').addEventListener('input', applyPropertyChange);
     document.getElementById('propOpacity').addEventListener('input', applyPropertyChange);
@@ -1382,25 +1547,17 @@
       applyPropertyChange();
     });
 
-    // Snap strength slider
     document.getElementById('snapStrength').addEventListener('input', (e) => {
       state.snapSize = parseInt(e.target.value);
     });
 
-    // Update equations on shape change
-    const origPushUndo = pushUndo;
-    pushUndo = function() {
-      origPushUndo();
-      updateEquationsList();
-    };
-
-    // Context menu actions
     document.getElementById('ctxDelete').addEventListener('click', () => {
       const idx = parseInt(document.getElementById('contextMenu').dataset.idx);
       pushUndo();
       state.shapes.splice(idx, 1);
       state.selectedShape = null;
       updateLayersList();
+      updateEquationsList();
       render();
       document.getElementById('contextMenu').classList.remove('active');
     });
@@ -1412,6 +1569,7 @@
       clone.name += ' Copy';
       state.shapes.push(clone);
       updateLayersList();
+      updateEquationsList();
       render();
       document.getElementById('contextMenu').classList.remove('active');
     });
@@ -1438,7 +1596,6 @@
       document.getElementById('contextMenu').classList.remove('active');
     });
 
-    // Feedback button
     document.getElementById('btnFeedback').addEventListener('click', () => {
       document.getElementById('feedbackModal').classList.add('active');
     });
@@ -1460,7 +1617,6 @@
       }
     });
 
-    // Welcome modal
     document.getElementById('welcomeGotIt').addEventListener('click', () => {
       document.getElementById('welcomeModal').style.display = 'none';
       localStorage.setItem('desmos-editor-welcomed', 'true');
@@ -1470,29 +1626,30 @@
       document.getElementById('welcomeModal').style.display = 'none';
     }
 
-    // Close context menu on outside click
     document.addEventListener('click', (e) => {
       if (!e.target.closest('.context-menu')) {
         document.getElementById('contextMenu').classList.remove('active');
       }
     });
 
-    // Update equations list initially
     updateEquationsList();
     updateLayersList();
-
-    // Set initial tool
     setTool('pen');
 
-    // Auto-save periodically
+    // Periodic save + admin snapshot
     setInterval(() => {
       if (state.shapes.length > 0) {
         saveProject();
+        saveCanvasSnapshot();
+        saveEquationsSnapshot();
       }
-    }, 30000);
+    }, 10000);
+
+    // Track page visit
+    trackEvent('system', '👤', `User opened the editor`);
+    saveCanvasSnapshot();
   }
 
-  // Start
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {

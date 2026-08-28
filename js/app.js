@@ -73,6 +73,8 @@
     opacity: 1,
     smooth: 0.5,
     snapEnabled: false,
+    snapSizeX: 20,
+    snapSizeY: 20,
     snapSize: 20,
     gridVisible: true,
     zoom: 1,
@@ -213,32 +215,32 @@
 
   function snapPoint(x, y) {
     if (!state.snapEnabled) return { x, y };
-    const s = state.snapSize;
     return {
-      x: Math.round(x / s) * s,
-      y: Math.round(y / s) * s
+      x: Math.round(x / state.snapSizeX) * state.snapSizeX,
+      y: Math.round(y / state.snapSizeY) * state.snapSizeY
     };
   }
 
   // ===== GRID + DESMOS BOUNDS =====
   function drawGrid() {
     if (!state.gridVisible) return;
-    const size = state.snapSize * state.zoom;
-    if (size < 4) return;
+    const sizeX = state.snapSizeX * state.zoom;
+    const sizeY = state.snapSizeY * state.zoom;
+    if (sizeX < 4 && sizeY < 4) return;
 
     ctx.save();
     ctx.strokeStyle = state.snapEnabled ? 'rgba(93,173,226,0.12)' : 'rgba(255,255,255,0.04)';
     ctx.lineWidth = 1;
 
-    const offsetX = state.panX % size;
-    const offsetY = state.panY % size;
+    const offsetX = state.panX % sizeX;
+    const offsetY = state.panY % sizeY;
 
     ctx.beginPath();
-    for (let x = offsetX; x < canvasWidth; x += size) {
+    for (let x = offsetX; x < canvasWidth; x += sizeX) {
       ctx.moveTo(x, 0);
       ctx.lineTo(x, canvasHeight);
     }
-    for (let y = offsetY; y < canvasHeight; y += size) {
+    for (let y = offsetY; y < canvasHeight; y += sizeY) {
       ctx.moveTo(0, y);
       ctx.lineTo(canvasWidth, y);
     }
@@ -774,7 +776,11 @@
         state.currentPath.push({ x: snapped.x, y: snapped.y });
       }
       render();
+      return;
     }
+
+    // Not drawing, not panning, not dragging — still render if mouse moves (for hover effects)
+    render();
   }
 
   function onMouseUp(e) {
@@ -1077,12 +1083,17 @@
   function updateSnapVisual() {
     const snapBtn = document.getElementById('snapToggle');
     const snapLabel = document.getElementById('snapStatusLabel');
+    const snapLabel2 = document.getElementById('snapStatusLabel2');
     if (state.snapEnabled) {
       snapBtn.classList.add('snap-on');
+      snapBtn.textContent = 'Snap ON';
       if (snapLabel) snapLabel.textContent = i18nData['snap_enable'] || 'Snap ON';
+      if (snapLabel2) snapLabel2.textContent = i18nData['snap_enable'] || 'Snap ON';
     } else {
       snapBtn.classList.remove('snap-on');
+      snapBtn.textContent = 'Snap';
       if (snapLabel) snapLabel.textContent = i18nData['snap_disable'] || 'Free Draw';
+      if (snapLabel2) snapLabel2.textContent = i18nData['snap_disable'] || 'Free Draw';
     }
     // Sync snap status bar visibility
     const snapStatus = document.getElementById('snapStatus');
@@ -1621,8 +1632,13 @@
       applyPropertyChange();
     });
 
-    document.getElementById('snapStrength').addEventListener('input', (e) => {
-      state.snapSize = parseInt(e.target.value);
+    document.getElementById('snapSizeX').addEventListener('change', (e) => {
+      state.snapSizeX = parseInt(e.target.value);
+      render();
+    });
+    document.getElementById('snapSizeY').addEventListener('change', (e) => {
+      state.snapSizeY = parseInt(e.target.value);
+      render();
     });
 
     document.getElementById('ctxDelete').addEventListener('click', () => {

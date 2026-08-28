@@ -40,7 +40,7 @@
       <button class="btn btn-secondary" id="btnRedo" data-i18n-tooltip="redo" data-tooltip="Redo">↪</button>
       <div style="width:1px;height:20px;background:var(--border);"></div>
       <button class="btn btn-secondary" id="gridToggle" data-i18n-tooltip="grid_show" data-tooltip="Show Grid" style="font-size:14px;">⊞</button>
-      <button class="btn btn-secondary" id="snapToggle" data-i18n-tooltip="snap_enable" data-tooltip="Snap to Grid" style="font-size:14px;">⊡</button>
+      <button class="btn btn-secondary" id="snapToggle" data-i18n-tooltip="snap_enable" data-tooltip="Snap to Grid (S)" style="font-size:12px;font-weight:600;">Snap</button>
       <div style="width:1px;height:20px;background:var(--border);"></div>
       <button class="btn btn-primary" id="btnExport" data-i18n="export_desmos">Export to Desmos</button>
       <button class="btn btn-secondary" id="btnCopyLatex" data-i18n="export_latex">Copy LaTeX</button>
@@ -163,13 +163,30 @@
         <div class="prop-row">
           <div class="snap-toggle" id="snapSwitch">
             <div class="toggle-switch" id="snapSwitchVisual"></div>
-            <span class="toggle-label" data-i18n="snap_disable">Free Draw</span>
+            <span class="toggle-label" id="snapStatusLabel2" data-i18n="snap_disable">Free Draw</span>
           </div>
         </div>
-        <div class="prop-row" style="margin-top:8px;">
-          <span class="prop-label" data-i18n="snap_strength">Snap Strength</span>
-          <input type="range" class="prop-slider" id="snapStrength" min="5" max="50" value="20">
-          <span class="prop-value">px</span>
+        <div class="prop-row" style="margin-top:10px;">
+          <span class="prop-label">Snap X</span>
+          <select class="prop-input" id="snapSizeX" style="cursor:pointer;">
+            <option value="5">5</option>
+            <option value="10">10</option>
+            <option value="20" selected>20</option>
+            <option value="25">25</option>
+            <option value="40">40</option>
+            <option value="50">50</option>
+          </select>
+        </div>
+        <div class="prop-row">
+          <span class="prop-label">Snap Y</span>
+          <select class="prop-input" id="snapSizeY" style="cursor:pointer;">
+            <option value="5">5</option>
+            <option value="10">10</option>
+            <option value="20" selected>20</option>
+            <option value="25">25</option>
+            <option value="40">40</option>
+            <option value="50">50</option>
+          </select>
         </div>
       </div>
 

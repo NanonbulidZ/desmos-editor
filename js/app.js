@@ -1133,31 +1133,28 @@
   // ===== SIMPLE LINE SEGMENT EQUATIONS =====
   // Format: y = mx+b(xmin<x<xmax) or x = c(ymin<y<ymax)
   function formatLineSeg(x1, y1, x2, y2) {
+    x1 = clampDesmos(x1); y1 = clampDesmos(y1);
+    x2 = clampDesmos(x2); y2 = clampDesmos(y2);
+    return formatSeg(r(x1), r(y1), r(x2), r(y2));
+  }
+
+  function formatSeg(x1, y1, x2, y2) {
     const dx = x2 - x1;
     const dy = y2 - y1;
 
-    // Vertical line: x = c
     if (Math.abs(dx) < 0.01) {
-      const c = clampDesmos(x1);
-      const yMin = clampDesmos(Math.min(y1, y2));
-      const yMax = clampDesmos(Math.max(y1, y2));
-      return `x = ${r(c)}\\left\\{${r(yMin)}\\le y\\le${r(yMax)}\\right\\}`;
+      return `x = ${x1}\\left\\{${Math.min(y1,y2)}\\le y\\le${Math.max(y1,y2)}\\right\\}`;
     }
 
     const m = dy / dx;
     const b = y1 - m * x1;
-    const xMin = clampDesmos(Math.min(x1, x2));
-    const xMax = clampDesmos(Math.max(x1, x2));
 
-    // Horizontal line: y = c
     if (Math.abs(m) < 0.001) {
-      const c = clampDesmos(b);
-      return `y = ${r(c)}\\left\\{${r(xMin)}\\le x\\le${r(xMax)}\\right\\}`;
+      return `y = ${r(b)}\\left\\{${Math.min(x1,x2)}\\le x\\le${Math.max(x1,x2)}\\right\\}`;
     }
 
-    // Diagonal: y = mx+b
     const sign = b >= 0 ? '+' : '';
-    return `y = ${r(m)}x${sign}${r(b)}\\left\\{${r(xMin)}\\le x\\le${r(xMax)}\\right\\}`;
+    return `y = ${r(m)}x${sign}${r(b)}\\left\\{${Math.min(x1,x2)}\\le x\\le${Math.max(x1,x2)}\\right\\}`;
   }
 
   function r(v) {
@@ -1208,50 +1205,45 @@
       case 'rect': {
         const tl = worldToDesmos(shape.x, shape.y);
         const br = worldToDesmos(shape.x + shape.width, shape.y + shape.height);
-        const left = clampDesmos(Math.min(tl.x, br.x));
-        const right = clampDesmos(Math.max(tl.x, br.x));
-        const top = clampDesmos(Math.max(tl.y, br.y));
-        const bottom = clampDesmos(Math.min(tl.y, br.y));
-        // 4 line segments for rectangle
-        const segs = [
-          formatLineSeg(left, top, right, top),      // top
-          formatLineSeg(right, top, right, bottom),   // right
-          formatLineSeg(right, bottom, left, bottom), // bottom
-          formatLineSeg(left, bottom, left, top)      // left
-        ];
-        return segs.join(', ');
+        const L = r(clampDesmos(Math.min(tl.x, br.x)));
+        const R = r(clampDesmos(Math.max(tl.x, br.x)));
+        const T = r(clampDesmos(Math.max(tl.y, br.y)));
+        const B = r(clampDesmos(Math.min(tl.y, br.y)));
+        return [
+          formatSeg(L, T, R, T),
+          formatSeg(R, T, R, B),
+          formatSeg(R, B, L, B),
+          formatSeg(L, B, L, T)
+        ].join(', ');
       }
       case 'ellipse': {
-        // Approximate ellipse with line segments
         const d = worldToDesmos(shape.cx, shape.cy);
         const cx = clampDesmos(d.x);
         const cy = clampDesmos(d.y);
         const rx = Math.abs(shape.rx / DESMOS_SCALE);
         const ry = Math.abs(shape.ry / DESMOS_SCALE);
         const numSegs = 24;
+        let prevX = r(cx + rx);
+        let prevY = r(cy);
         const segs = [];
-        for (let i = 0; i < numSegs; i++) {
-          const a1 = (i / numSegs) * Math.PI * 2;
-          const a2 = ((i + 1) / numSegs) * Math.PI * 2;
-          const x1 = clampDesmos(cx + rx * Math.cos(a1));
-          const y1 = clampDesmos(cy + ry * Math.sin(a1));
-          const x2 = clampDesmos(cx + rx * Math.cos(a2));
-          const y2 = clampDesmos(cy + ry * Math.sin(a2));
-          segs.push(formatLineSeg(x1, y1, x2, y2));
+        for (let i = 1; i <= numSegs; i++) {
+          const a = (i / numSegs) * Math.PI * 2;
+          const curX = r(clampDesmos(cx + rx * Math.cos(a)));
+          const curY = r(clampDesmos(cy + ry * Math.sin(a)));
+          segs.push(formatSeg(prevX, prevY, curX, curY));
+          prevX = curX;
+          prevY = curY;
         }
         return segs.join(', ');
       }
       case 'path': {
         const pts = shape.points.map(p => worldToDesmos(p.x, p.y));
-        // Simplify the path first
         const simplified = simplifyPath(pts);
         if (simplified.length < 2) return '';
-        // Convert to line segments
+        const rounded = simplified.map(p => ({ x: r(clampDesmos(p.x)), y: r(clampDesmos(p.y)) }));
         const segs = [];
-        for (let i = 0; i < simplified.length - 1; i++) {
-          const p1 = simplified[i];
-          const p2 = simplified[i + 1];
-          segs.push(formatLineSeg(p1.x, p1.y, p2.x, p2.y));
+        for (let i = 0; i < rounded.length - 1; i++) {
+          segs.push(formatSeg(rounded[i].x, rounded[i].y, rounded[i + 1].x, rounded[i + 1].y));
         }
         return segs.join(', ');
       }

@@ -30,34 +30,61 @@
   const EVENTS_KEY = 'desmos-editor-events';
   const CANVAS_KEY = 'desmos-editor-canvas-snapshot';
   const EQUATIONS_KEY = 'desmos-editor-equations';
+  const USERS_KEY = 'desmos-editor-users';
+
+  // Persistent user ID per browser
+  function getUserId() {
+    let uid = localStorage.getItem('desmos-editor-uid');
+    if (!uid) {
+      uid = 'user_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 5);
+      localStorage.setItem('desmos-editor-uid', uid);
+    }
+    return uid;
+  }
 
   function trackEvent(category, icon, msg) {
     try {
+      const uid = getUserId();
       const events = JSON.parse(localStorage.getItem(EVENTS_KEY) || '[]');
       events.push({
         ts: new Date().toISOString(),
         category,
         icon,
         msg,
+        uid,
         session: sessionId
       });
       // Keep last 500 events
       if (events.length > 500) events.splice(0, events.length - 500);
       localStorage.setItem(EVENTS_KEY, JSON.stringify(events));
+
+      // Track user in users list
+      const users = JSON.parse(localStorage.getItem(USERS_KEY) || '{}');
+      users[uid] = { lastSeen: new Date().toISOString(), lang: state.lang };
+      localStorage.setItem(USERS_KEY, JSON.stringify(users));
     } catch (e) { /* storage full, ignore */ }
   }
 
   function saveCanvasSnapshot() {
     try {
+      const uid = getUserId();
       const dataUrl = canvas.toDataURL('image/png', 0.3);
-      localStorage.setItem(CANVAS_KEY, dataUrl);
+      // Save per-user snapshot
+      const snapshots = JSON.parse(localStorage.getItem(CANVAS_KEY) || '{}');
+      snapshots[uid] = dataUrl;
+      localStorage.setItem(CANVAS_KEY, JSON.stringify(snapshots));
     } catch (e) { /* ignore */ }
   }
 
   function saveEquationsSnapshot() {
     try {
-      const eqs = state.shapes.map(s => shapeToLatex(s)).filter(l => l);
-      localStorage.setItem(EQUATIONS_KEY, JSON.stringify(eqs));
+      const uid = getUserId();
+      const eqs = state.shapes.map(s => shapeToLatex(s)).filter(l => l).flat();
+      const allEqs = [];
+      eqs.forEach(eq => eq.split(', ').forEach(e => { if (e.trim()) allEqs.push(e.trim()); }));
+      const equations = JSON.parse(localStorage.getItem(EQUATIONS_KEY) || '{}');
+      equations[uid] = allEqs;
+      localStorage.setItem(EQUATIONS_KEY, JSON.stringify(equations));
     } catch (e) { /* ignore */ }
   }
 
@@ -1599,8 +1626,16 @@
     trackVisit();
     updateStatsDisplay();
 
+    // Safe event binding helper
+    function bind(id, evt, fn) {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener(evt, fn);
+    }
+
     const hasProject = localStorage.getItem('desmos-editor-project');
-    if (hasProject) loadProject();
+    if (hasProject) {
+      try { loadProject(); } catch (e) { console.warn('Project load failed:', e); }
+    }
 
     document.querySelectorAll('.tool-btn[data-tool]').forEach(btn => {
       btn.addEventListener('click', () => setTool(btn.dataset.tool));
@@ -1610,38 +1645,57 @@
       btn.addEventListener('click', () => addPreset(btn.dataset.preset));
     });
 
-    document.getElementById('snapSwitch').addEventListener('click', toggleSnap);
-    document.getElementById('snapToggle').addEventListener('click', toggleSnap);
-    document.getElementById('gridToggle').addEventListener('click', toggleGrid);
+    bind('snapSwitch', 'click', toggleSnap);
+    bind('snapToggle', 'click', toggleSnap);
+    bind('gridToggle', 'click', toggleGrid);
 
-    document.getElementById('btnUndo').addEventListener('click', undo);
-    document.getElementById('btnRedo').addEventListener('click', redo);
-    document.getElementById('btnClear').addEventListener('click', clearAll);
-    document.getElementById('btnExport').addEventListener('click', exportToDesmos);
-    document.getElementById('btnCopyLatex').addEventListener('click', copyLaTeX);
-    document.getElementById('btnExportSvg').addEventListener('click', exportSVG);
-    document.getElementById('btnSave').addEventListener('click', saveProject);
+    bind('btnUndo', 'click', undo);
+    bind('btnRedo', 'click', redo);
+    bind('btnClear', 'click', clearAll);
+    bind('btnExport', 'click', exportToDesmos);
+    bind('btnCopyLatex', 'click', copyLaTeX);
+    bind('btnExportSvg', 'click', exportSVG);
+    bind('btnSave', 'click', saveProject);
 
-    document.getElementById('langSelect').addEventListener('change', (e) => loadLanguage(e.target.value));
+    bind('langSelect', 'change', (e) => loadLanguage(e.target.value));
 
-    document.getElementById('propStrokeColor').addEventListener('input', applyPropertyChange);
-    document.getElementById('propStrokeWidth').addEventListener('input', applyPropertyChange);
-    document.getElementById('propOpacity').addEventListener('input', applyPropertyChange);
-    document.getElementById('propSmooth').addEventListener('input', (e) => {
-      document.getElementById('propSmoothVal').textContent = (e.target.value / 100).toFixed(1);
+    bind('propStrokeColor', 'input', applyPropertyChange);
+    bind('propStrokeWidth', 'input', applyPropertyChange);
+    bind('propOpacity', 'input', applyPropertyChange);
+    bind('propSmooth', 'input', (e) => {
+      const el = document.getElementById('propSmoothVal');
+      if (el) el.textContent = (e.target.value / 100).toFixed(1);
       applyPropertyChange();
     });
 
-    document.getElementById('snapSizeX').addEventListener('change', (e) => {
+    bind('snapSizeX', 'change', (e) => {
       state.snapSizeX = parseInt(e.target.value);
+      const numEl = document.getElementById('snapSizeXNum');
+      if (numEl) numEl.value = state.snapSizeX;
       render();
     });
-    document.getElementById('snapSizeY').addEventListener('change', (e) => {
+    bind('snapSizeY', 'change', (e) => {
       state.snapSizeY = parseInt(e.target.value);
+      const numEl = document.getElementById('snapSizeYNum');
+      if (numEl) numEl.value = state.snapSizeY;
+      render();
+    });
+    bind('snapSizeXNum', 'input', (e) => {
+      const v = parseInt(e.target.value) || 20;
+      state.snapSizeX = Math.max(1, Math.min(100, v));
+      const sel = document.getElementById('snapSizeX');
+      if (sel) sel.value = state.snapSizeX;
+      render();
+    });
+    bind('snapSizeYNum', 'input', (e) => {
+      const v = parseInt(e.target.value) || 20;
+      state.snapSizeY = Math.max(1, Math.min(100, v));
+      const sel = document.getElementById('snapSizeY');
+      if (sel) sel.value = state.snapSizeY;
       render();
     });
 
-    document.getElementById('ctxDelete').addEventListener('click', () => {
+    bind('ctxDelete', 'click', () => {
       const idx = parseInt(document.getElementById('contextMenu').dataset.idx);
       pushUndo();
       state.shapes.splice(idx, 1);
@@ -1652,7 +1706,7 @@
       document.getElementById('contextMenu').classList.remove('active');
     });
 
-    document.getElementById('ctxDuplicate').addEventListener('click', () => {
+    bind('ctxDuplicate', 'click', () => {
       const idx = parseInt(document.getElementById('contextMenu').dataset.idx);
       pushUndo();
       const clone = JSON.parse(JSON.stringify(state.shapes[idx]));
@@ -1664,7 +1718,7 @@
       document.getElementById('contextMenu').classList.remove('active');
     });
 
-    document.getElementById('ctxBringFront').addEventListener('click', () => {
+    bind('ctxBringFront', 'click', () => {
       const idx = parseInt(document.getElementById('contextMenu').dataset.idx);
       pushUndo();
       const shape = state.shapes.splice(idx, 1)[0];
@@ -1675,7 +1729,7 @@
       document.getElementById('contextMenu').classList.remove('active');
     });
 
-    document.getElementById('ctxSendBack').addEventListener('click', () => {
+    bind('ctxSendBack', 'click', () => {
       const idx = parseInt(document.getElementById('contextMenu').dataset.idx);
       pushUndo();
       const shape = state.shapes.splice(idx, 1)[0];
@@ -1686,15 +1740,15 @@
       document.getElementById('contextMenu').classList.remove('active');
     });
 
-    document.getElementById('btnFeedback').addEventListener('click', () => {
+    bind('btnFeedback', 'click', () => {
       document.getElementById('feedbackModal').classList.add('active');
     });
 
-    document.getElementById('feedbackCancel').addEventListener('click', () => {
+    bind('feedbackCancel', 'click', () => {
       document.getElementById('feedbackModal').classList.remove('active');
     });
 
-    document.getElementById('feedbackForm').addEventListener('submit', (e) => {
+    bind('feedbackForm', 'submit', (e) => {
       e.preventDefault();
       const name = document.getElementById('fbName').value;
       const email = document.getElementById('fbEmail').value;
@@ -1707,18 +1761,23 @@
       }
     });
 
-    document.getElementById('welcomeGotIt').addEventListener('click', () => {
-      document.getElementById('welcomeModal').style.display = 'none';
+    // Welcome modal - ALWAYS register the click handler first
+    bind('welcomeGotIt', 'click', () => {
+      const modal = document.getElementById('welcomeModal');
+      if (modal) modal.style.display = 'none';
       localStorage.setItem('desmos-editor-welcomed', 'true');
     });
 
+    // Then check if already welcomed
     if (localStorage.getItem('desmos-editor-welcomed')) {
-      document.getElementById('welcomeModal').style.display = 'none';
+      const modal = document.getElementById('welcomeModal');
+      if (modal) modal.style.display = 'none';
     }
 
     document.addEventListener('click', (e) => {
       if (!e.target.closest('.context-menu')) {
-        document.getElementById('contextMenu').classList.remove('active');
+        const ctx = document.getElementById('contextMenu');
+        if (ctx) ctx.classList.remove('active');
       }
     });
 
@@ -1735,8 +1794,9 @@
       }
     }, 10000);
 
-    // Track page visit
-    trackEvent('system', '👤', `User opened the editor`);
+    // Track page visit with user ID
+    const uid = getUserId();
+    trackEvent('system', '👤', `User <strong>${uid}</strong> opened the editor`);
     saveCanvasSnapshot();
   }
 

@@ -641,7 +641,12 @@
     <!-- Canvas Preview + Equations -->
     <div class="preview-section">
       <div class="preview-header">
-        <h2>Live Canvas Preview</h2>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <h2>Canvas Preview</h2>
+          <select id="userSelect" onchange="switchUser(this.value)" style="background:var(--bg3);border:1px solid var(--border2);border-radius:4px;padding:4px 8px;color:var(--text);font-size:11px;font-family:inherit;">
+            <option value="all">All Users</option>
+          </select>
+        </div>
         <span class="badge" id="previewBadge">WAITING</span>
       </div>
       <div class="preview-body">
@@ -750,14 +755,45 @@
     const STATS_KEY = 'desmos-editor-stats';
     const CANVAS_KEY = 'desmos-editor-canvas-snapshot';
     const EQUATIONS_KEY = 'desmos-editor-equations';
+    const USERS_KEY = 'desmos-editor-users';
 
     let allEvents = [];
-    let lastEventCount = 0;
+    let selectedUser = 'all';
 
     function loadAllData() {
       loadStats();
       loadEvents();
       loadFeedback();
+      loadUserList();
+      loadCanvasSnapshot();
+      loadEquations();
+    }
+
+    // ===== USER SELECTOR =====
+    function loadUserList() {
+      try {
+        const users = JSON.parse(localStorage.getItem(USERS_KEY) || '{}');
+        const select = document.getElementById('userSelect');
+        const currentVal = select.value;
+        // Keep "All Users" option, remove the rest
+        while (select.options.length > 1) select.remove(1);
+        const uids = Object.keys(users).sort((a, b) => {
+          return new Date(users[b].lastSeen) - new Date(users[a].lastSeen);
+        });
+        uids.forEach(uid => {
+          const opt = document.createElement('option');
+          opt.value = uid;
+          const lastSeen = new Date(users[uid].lastSeen);
+          const timeStr = lastSeen.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
+          opt.textContent = uid.replace('user_', '') + ' (' + timeStr + ')';
+          select.appendChild(opt);
+        });
+        if (currentVal) select.value = currentVal;
+      } catch (e) {}
+    }
+
+    function switchUser(uid) {
+      selectedUser = uid;
       loadCanvasSnapshot();
       loadEquations();
     }
@@ -868,21 +904,51 @@
     // ===== CANVAS SNAPSHOT =====
     function loadCanvasSnapshot() {
       try {
-        const snapshot = localStorage.getItem(CANVAS_KEY);
+        const raw = localStorage.getItem(CANVAS_KEY);
         const preview = document.getElementById('canvasPreview');
         const noData = document.getElementById('noData');
         const badge = document.getElementById('previewBadge');
+
+        // Remove old img
+        const oldImg = preview.querySelector('img');
+        if (oldImg) oldImg.remove();
+
+        if (!raw) {
+          noData.style.display = 'block';
+          badge.textContent = 'WAITING';
+          badge.style.background = 'rgba(234,179,8,0.15)';
+          badge.style.color = '#eab308';
+          return;
+        }
+
+        // Handle both old (string) and new (object) format
+        let snapshot = null;
+        try {
+          const parsed = JSON.parse(raw);
+          if (typeof parsed === 'object' && parsed !== null) {
+            // New per-user format
+            if (selectedUser === 'all') {
+              // Show the latest snapshot from any user
+              const keys = Object.keys(parsed);
+              if (keys.length > 0) {
+                // Pick most recent
+                snapshot = parsed[keys[keys.length - 1]];
+              }
+            } else {
+              snapshot = parsed[selectedUser];
+            }
+          } else {
+            snapshot = raw; // Old format was just a data URL string
+          }
+        } catch (e) {
+          snapshot = raw; // Not JSON, treat as raw data URL
+        }
 
         if (snapshot) {
           noData.style.display = 'none';
           badge.textContent = 'LIVE';
           badge.style.background = 'rgba(34,197,94,0.15)';
           badge.style.color = '#22c55e';
-
-          // Remove old canvas/img
-          const oldImg = preview.querySelector('img');
-          if (oldImg) oldImg.remove();
-
           const img = document.createElement('img');
           img.src = snapshot;
           img.style.width = '100%';
@@ -892,7 +958,7 @@
           preview.appendChild(img);
         } else {
           noData.style.display = 'block';
-          badge.textContent = 'WAITING';
+          badge.textContent = 'NO DATA';
           badge.style.background = 'rgba(234,179,8,0.15)';
           badge.style.color = '#eab308';
         }
@@ -904,12 +970,36 @@
     // ===== EQUATIONS =====
     function loadEquations() {
       try {
-        const eqs = JSON.parse(localStorage.getItem(EQUATIONS_KEY) || '[]');
+        const raw = localStorage.getItem(EQUATIONS_KEY);
         const preview = document.getElementById('equationPreview');
         const empty = document.getElementById('eqEmpty');
 
+        let eqs = [];
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw);
+            if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+              // Per-user format
+              if (selectedUser === 'all') {
+                // Combine all users' equations
+                Object.values(parsed).forEach(arr => {
+                  if (Array.isArray(arr)) eqs = eqs.concat(arr);
+                });
+              } else {
+                eqs = parsed[selectedUser] || [];
+              }
+            } else if (Array.isArray(parsed)) {
+              eqs = parsed; // Old format
+            }
+          } catch (e) {
+            // Not JSON
+          }
+        }
+
         if (eqs.length === 0) {
           empty.style.display = 'block';
+          preview.innerHTML = '';
+          preview.appendChild(empty);
           return;
         }
         empty.style.display = 'none';

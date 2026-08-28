@@ -574,7 +574,8 @@
       ctx.setLineDash([6, 4]);
       ctx.globalAlpha = 0.6;
       const s1 = worldToScreen(state.rectStart.x, state.rectStart.y);
-      const s2 = worldToScreen(state.mouseX, state.mouseY);
+      const mouseWorld = screenToWorld(state.mouseX, state.mouseY);
+      const s2 = worldToScreen(mouseWorld.x, mouseWorld.y);
       ctx.beginPath();
       ctx.moveTo(s1.x, s1.y);
       ctx.lineTo(s2.x, s2.y);
@@ -582,7 +583,7 @@
       ctx.setLineDash([]);
       // Show Desmos coords at both endpoints
       const dm1 = worldToDesmos(state.rectStart.x, state.rectStart.y);
-      const dm2 = worldToDesmos(state.mouseX, state.mouseY);
+      const dm2 = worldToDesmos(mouseWorld.x, mouseWorld.y);
       drawLiveDesmosLabel(s1.x, s1.y, dm1);
       drawLiveDesmosLabel(s2.x, s2.y, dm2);
       ctx.restore();
@@ -596,7 +597,8 @@
       ctx.setLineDash([6, 4]);
       ctx.globalAlpha = 0.6;
       const s1 = worldToScreen(state.rectStart.x, state.rectStart.y);
-      const s2 = worldToScreen(state.mouseX, state.mouseY);
+      const mouseWorld = screenToWorld(state.mouseX, state.mouseY);
+      const s2 = worldToScreen(mouseWorld.x, mouseWorld.y);
       const x = Math.min(s1.x, s2.x);
       const y = Math.min(s1.y, s2.y);
       const w = Math.abs(s2.x - s1.x);
@@ -611,7 +613,7 @@
       ctx.setLineDash([]);
       // Show Desmos coords at corners
       const dm1 = worldToDesmos(state.rectStart.x, state.rectStart.y);
-      const dm2 = worldToDesmos(state.mouseX, state.mouseY);
+      const dm2 = worldToDesmos(mouseWorld.x, mouseWorld.y);
       drawLiveDesmosLabel(s1.x, s1.y, dm1);
       drawLiveDesmosLabel(s2.x, s2.y, dm2);
       ctx.restore();
@@ -1090,21 +1092,80 @@
   }
 
   // ===== EQUATION CONVERSION (with Desmos bounds clamping) =====
+  // ===== SIMPLE LINE SEGMENT EQUATIONS =====
+  // Format: y = mx+b(xmin<x<xmax) or x = c(ymin<y<ymax)
+  function formatLineSeg(x1, y1, x2, y2) {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+
+    // Vertical line: x = c
+    if (Math.abs(dx) < 0.01) {
+      const c = clampDesmos(x1);
+      const yMin = clampDesmos(Math.min(y1, y2));
+      const yMax = clampDesmos(Math.max(y1, y2));
+      return `x = ${r(c)}(${r(yMin)}<y<${r(yMax)})`;
+    }
+
+    const m = dy / dx;
+    const b = y1 - m * x1;
+    const xMin = clampDesmos(Math.min(x1, x2));
+    const xMax = clampDesmos(Math.max(x1, x2));
+
+    // Horizontal line: y = c
+    if (Math.abs(m) < 0.001) {
+      const c = clampDesmos(b);
+      return `y = ${r(c)}(${r(xMin)}<x<${r(xMax)})`;
+    }
+
+    // Diagonal: y = mx+b
+    const sign = b >= 0 ? '+' : '';
+    return `y = ${r(m)}x${sign}${r(b)}(${r(xMin)}<x<${r(xMax)})`;
+  }
+
+  function r(v) {
+    // Round to 1 decimal, remove trailing zeros
+    return parseFloat(v.toFixed(1));
+  }
+
+  function simplifyPath(pts) {
+    // Douglas-Peucker line simplification
+    if (pts.length <= 2) return pts;
+    const tolerance = 0.3;
+
+    function perpDist(p, a, b) {
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      if (len === 0) return Math.hypot(p.x - a.x, p.y - a.y);
+      return Math.abs(dy * p.x - dx * p.y + b.x * a.y - b.y * a.x) / len;
+    }
+
+    function simplify(pts, first, last, keep) {
+      let maxDist = 0;
+      let maxIdx = first;
+      for (let i = first + 1; i < last; i++) {
+        const d = perpDist(pts[i], pts[first], pts[last]);
+        if (d > maxDist) { maxDist = d; maxIdx = i; }
+      }
+      if (maxDist > tolerance) {
+        simplify(pts, first, maxIdx, keep);
+        simplify(pts, maxIdx, last, keep);
+      } else {
+        keep.push(pts[last]);
+      }
+    }
+
+    const kept = [pts[0]];
+    simplify(pts, 0, pts.length - 1, kept);
+    return kept;
+  }
+
   function shapeToLatex(shape) {
     switch (shape.type) {
       case 'line': {
         const d1 = worldToDesmos(shape.x1, shape.y1);
         const d2 = worldToDesmos(shape.x2, shape.y2);
-        const x1 = d1.x, y1 = d1.y, x2 = d2.x, y2 = d2.y;
-        // Vertical line
-        if (Math.abs(x2 - x1) < 0.01) {
-          return `x = ${clampDesmos(x1).toFixed(2)}\\left\\{${Math.min(y1,y2).toFixed(2)}\\le y\\le${Math.max(y1,y2).toFixed(2)}\\right\\}`;
-        }
-        const m = (y2 - y1) / (x2 - x1);
-        const b = y1 - m * x1;
-        const xMin = Math.min(x1, x2);
-        const xMax = Math.max(x1, x2);
-        return `${m.toFixed(4)}x+${b.toFixed(4)}\\left\\{${xMin.toFixed(2)}\\le x\\le${xMax.toFixed(2)}\\right\\}`;
+        return formatLineSeg(d1.x, d1.y, d2.x, d2.y);
       }
       case 'rect': {
         const tl = worldToDesmos(shape.x, shape.y);
@@ -1113,58 +1174,48 @@
         const right = clampDesmos(Math.max(tl.x, br.x));
         const top = clampDesmos(Math.max(tl.y, br.y));
         const bottom = clampDesmos(Math.min(tl.y, br.y));
-        return `\\operatorname{polygon}([(${left.toFixed(2)},${top.toFixed(2)}),(${right.toFixed(2)},${top.toFixed(2)}),(${right.toFixed(2)},${bottom.toFixed(2)}),(${left.toFixed(2)},${bottom.toFixed(2)})])`;
+        // 4 line segments for rectangle
+        const segs = [
+          formatLineSeg(left, top, right, top),      // top
+          formatLineSeg(right, top, right, bottom),   // right
+          formatLineSeg(right, bottom, left, bottom), // bottom
+          formatLineSeg(left, bottom, left, top)      // left
+        ];
+        return segs.join(', ');
       }
       case 'ellipse': {
+        // Approximate ellipse with line segments
         const d = worldToDesmos(shape.cx, shape.cy);
         const cx = clampDesmos(d.x);
         const cy = clampDesmos(d.y);
-        const rx = clampDesmos(Math.abs(shape.rx / DESMOS_SCALE));
-        const ry = clampDesmos(Math.abs(shape.ry / DESMOS_SCALE));
-        return `\\frac{(x-${cx.toFixed(2)})^2}{${(rx*rx).toFixed(4)}}+\\frac{(y-${cy.toFixed(2)})^2}{${(ry*ry).toFixed(4)}}=1\\left\\{${(-DESMOS_RANGE).toFixed(0)}\\le x\\le${DESMOS_RANGE.toFixed(0)}\\right\\}`;
+        const rx = Math.abs(shape.rx / DESMOS_SCALE);
+        const ry = Math.abs(shape.ry / DESMOS_SCALE);
+        const numSegs = 24;
+        const segs = [];
+        for (let i = 0; i < numSegs; i++) {
+          const a1 = (i / numSegs) * Math.PI * 2;
+          const a2 = ((i + 1) / numSegs) * Math.PI * 2;
+          const x1 = clampDesmos(cx + rx * Math.cos(a1));
+          const y1 = clampDesmos(cy + ry * Math.sin(a1));
+          const x2 = clampDesmos(cx + rx * Math.cos(a2));
+          const y2 = clampDesmos(cy + ry * Math.sin(a2));
+          segs.push(formatLineSeg(x1, y1, x2, y2));
+        }
+        return segs.join(', ');
       }
       case 'path': {
         const pts = shape.points.map(p => worldToDesmos(p.x, p.y));
-        if (pts.length <= 2) {
-          const p1 = pts[0], p2 = pts[pts.length - 1];
-          if (Math.abs(p2.x - p1.x) < 0.01) {
-            return `x = ${clampDesmos(p1.x).toFixed(2)}\\left\\{${Math.min(p1.y,p2.y).toFixed(2)}\\le y\\le${Math.max(p1.y,p2.y).toFixed(2)}\\right\\}`;
-          }
-          const m = (p2.y - p1.y) / (p2.x - p1.x);
-          const b = p1.y - m * p1.x;
-          const xMin = clampDesmos(Math.min(p1.x, p2.x));
-          const xMax = clampDesmos(Math.max(p1.x, p2.x));
-          return `${m.toFixed(4)}x+${b.toFixed(4)}\\left\\{${xMin.toFixed(2)}\\le x\\le${xMax.toFixed(2)}\\right\\}`;
+        // Simplify the path first
+        const simplified = simplifyPath(pts);
+        if (simplified.length < 2) return '';
+        // Convert to line segments
+        const segs = [];
+        for (let i = 0; i < simplified.length - 1; i++) {
+          const p1 = simplified[i];
+          const p2 = simplified[i + 1];
+          segs.push(formatLineSeg(p1.x, p1.y, p2.x, p2.y));
         }
-
-        // Fit quadratic y = ax^2 + bx + c
-        const n = pts.length;
-        let sx2 = 0, sx = 0, sy = 0, sxy = 0, sx2y = 0, sx3 = 0, sx4 = 0;
-        for (const p of pts) {
-          sx2 += p.x * p.x; sx += p.x; sy += p.y;
-          sxy += p.x * p.y; sx2y += p.x * p.x * p.y;
-          sx3 += p.x * p.x * p.x; sx4 += p.x * p.x * p.x * p.x;
-        }
-        const det = n * (sx2 * sx4 - sx3 * sx3) - sx * (sx * sx4 - sx2 * sx3) + sx2 * (sx * sx3 - sx2 * sx2);
-        let a = 0, b = 0, c = sy / n;
-        if (Math.abs(det) > 0.0001) {
-          a = (n * (sx2y * sx4 - sx3 * (sx2 * sy / n)) - sy * (sx * sx4 - sx2 * sx3) + sx2 * (sx * (sx2 * sy / n) - sx2y * n)) / det;
-          b = (n * (sx2 * sx2y - sx3 * sy) - sx * (n * sx4 * sy / n - sx3 * sx2 * sy / n) + sx2 * (sx * sy - sx2 * sx2y)) / det;
-          c = sy / n - a * sx2 / n - b * sx / n;
-        }
-
-        const xMin = clampDesmos(Math.max(-DESMOS_RANGE, Math.min(...pts.map(p => p.x))));
-        const xMax = clampDesmos(Math.min(DESMOS_RANGE, Math.max(...pts.map(p => p.x))));
-
-        if (Math.abs(a) > 0.001) {
-          return `${a.toFixed(6)}x^2+${b.toFixed(6)}x+${c.toFixed(4)}\\left\\{${xMin.toFixed(2)}\\le x\\le${xMax.toFixed(2)}\\right\\}`;
-        }
-        // Linear fit
-        const avgX = sx / n;
-        const avgY = sy / n;
-        const linM = (sxy - n * avgX * avgY) / (sx2 - n * avgX * avgX || 0.001);
-        const linB = avgY - linM * avgX;
-        return `${linM.toFixed(4)}x+${linB.toFixed(4)}\\left\\{${xMin.toFixed(2)}\\le x\\le${xMax.toFixed(2)}\\right\\}`;
+        return segs.join(', ');
       }
       default:
         return '';
@@ -1178,8 +1229,20 @@
     }
     state.stats.exports++;
     saveStats();
-    const equations = state.shapes.map(s => shapeToLatex(s)).filter(l => l);
-    trackEvent('export', '📤', `Exported <strong>${equations.length} equation${equations.length !== 1 ? 's' : ''}</strong> to Desmos`);
+
+    // Each shape may produce comma-separated equations, split them
+    const allEqs = [];
+    state.shapes.forEach(s => {
+      const latex = shapeToLatex(s);
+      if (latex) {
+        latex.split(', ').forEach(eq => {
+          const trimmed = eq.trim();
+          if (trimmed) allEqs.push(trimmed);
+        });
+      }
+    });
+
+    trackEvent('export', '📤', `Exported <strong>${allEqs.length} equation${allEqs.length !== 1 ? 's' : ''}</strong> to Desmos`);
 
     if (window.Desmos) {
       try {
@@ -1189,15 +1252,14 @@
           expressions: true, settingsMenu: false, zoomButtons: true,
           keypad: false, border: true, lockViewport: false
         });
-        // Set graph bounds to match our -10 to 10
         calc.setMathBounds({ left: -DESMOS_RANGE, right: DESMOS_RANGE, bottom: -DESMOS_RANGE, top: DESMOS_RANGE });
-        equations.forEach(eq => calc.setExpression({ latex: eq }));
+        allEqs.forEach(eq => calc.setExpression({ latex: eq }));
         showToast(t('toast_exported'), 'success');
       } catch (e) {
-        copyToClipboard(equations.join('\n'));
+        copyToClipboard(allEqs.join('\n'));
       }
     } else {
-      copyToClipboard(equations.join('\n'));
+      copyToClipboard(allEqs.join('\n'));
     }
   }
 
@@ -1216,8 +1278,17 @@
   }
 
   function copyLaTeX() {
-    const equations = state.shapes.map(s => shapeToLatex(s)).filter(l => l);
-    copyToClipboard(equations.join('\n'));
+    const allEqs = [];
+    state.shapes.forEach(s => {
+      const latex = shapeToLatex(s);
+      if (latex) {
+        latex.split(', ').forEach(eq => {
+          const trimmed = eq.trim();
+          if (trimmed) allEqs.push(trimmed);
+        });
+      }
+    });
+    copyToClipboard(allEqs.join('\n'));
   }
 
   function exportSVG() {
@@ -1488,11 +1559,14 @@
     state.shapes.forEach((shape, i) => {
       const latex = shapeToLatex(shape);
       if (!latex) return;
+      // Split comma-separated equations
+      const eqs = latex.split(', ').map(e => e.trim()).filter(e => e);
       const item = document.createElement('div');
       item.className = 'equation-item';
       item.innerHTML = `
         <button class="eq-delete" data-idx="${i}" title="Delete">✕</button>
-        ${latex}
+        <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px;">${shape.name} (${eqs.length} segments)</div>
+        ${eqs.map(eq => `<div style="margin-bottom:2px;">${eq}</div>`).join('')}
       `;
       item.querySelector('.eq-delete').addEventListener('click', () => {
         pushUndo();

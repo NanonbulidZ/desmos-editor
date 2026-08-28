@@ -1158,7 +1158,7 @@
   }
 
   function r(v) {
-    return parseFloat(v.toFixed(1));
+    return parseFloat(v.toFixed(2));
   }
 
   function rd(v) {

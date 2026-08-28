@@ -912,11 +912,16 @@
     function loadFeedback() {
       try {
         const feedback = JSON.parse(localStorage.getItem(FEEDBACK_KEY) || '[]');
-        document.getElementById('fbCount').textContent = `${feedback.length} messages`;
-        document.getElementById('statFeedback').textContent = feedback.length;
+        const fbCountEl = document.getElementById('fbCount');
+        if (fbCountEl) fbCountEl.textContent = `${feedback.length} messages`;
+        const statFb = document.getElementById('statFeedback');
+        if (statFb) statFb.textContent = feedback.length;
+        const fbTableCount = document.getElementById('fbTableCount');
+        if (fbTableCount) fbTableCount.textContent = `${feedback.length} messages`;
 
         const list = document.getElementById('feedbackList');
         const empty = document.getElementById('fbEmpty');
+        if (!list || !empty) return;
 
         if (feedback.length === 0) {
           empty.style.display = 'block';
@@ -1017,15 +1022,14 @@
         const raw = localStorage.getItem(EQUATIONS_KEY);
         const preview = document.getElementById('equationPreview');
         const empty = document.getElementById('eqEmpty');
+        if (!preview) return;
 
         let eqs = [];
         if (raw) {
           try {
             const parsed = JSON.parse(raw);
             if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-              // Per-user format
               if (selectedUser === 'all') {
-                // Combine all users' equations
                 Object.values(parsed).forEach(arr => {
                   if (Array.isArray(arr)) eqs = eqs.concat(arr);
                 });
@@ -1033,20 +1037,18 @@
                 eqs = parsed[selectedUser] || [];
               }
             } else if (Array.isArray(parsed)) {
-              eqs = parsed; // Old format
+              eqs = parsed;
             }
-          } catch (e) {
-            // Not JSON
-          }
+          } catch (e) {}
         }
 
         if (eqs.length === 0) {
-          empty.style.display = 'block';
+          if (empty) empty.style.display = 'block';
           preview.innerHTML = '';
-          preview.appendChild(empty);
+          if (empty) preview.appendChild(empty);
           return;
         }
-        empty.style.display = 'none';
+        if (empty) empty.style.display = 'none';
         preview.innerHTML = '';
 
         eqs.forEach(eq => {

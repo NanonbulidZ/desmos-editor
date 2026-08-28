@@ -30,8 +30,10 @@ const CloudStorage = (function() {
     if (res.status === 404) return null;
     if (!res.ok) throw new Error('GitHub GET failed: ' + res.status);
     const json = await res.json();
+    let raw = decodeURIComponent(escape(atob(json.content)));
+    if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1);
     return {
-      content: JSON.parse(atob(json.content)),
+      content: JSON.parse(raw),
       sha: json.sha
     };
   }

@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Desmos Equation Editor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📐</text></svg>">
+</head>
+<body>
+
+  <!-- ===== WELCOME MODAL ===== -->
+  <div class="welcome-overlay" id="welcomeModal">
+    <div class="welcome-card">
+      <div class="welcome-icon">📐</div>
+      <h1 data-i18n="welcome_title">Welcome to Desmos Editor</h1>
+      <p data-i18n="welcome_desc">Draw shapes on the canvas, then click 'Export to Desmos' to convert them into mathematical equations.</p>
+      <p style="font-size:11px;color:var(--text-muted);margin-bottom:16px;">
+        <span class="kbd">P</span> Pen &nbsp;
+        <span class="kbd">L</span> Line &nbsp;
+        <span class="kbd">R</span> Rect &nbsp;
+        <span class="kbd">O</span> Ellipse &nbsp;
+        <span class="kbd">V</span> Select &nbsp;
+        <span class="kbd">H</span> Pan
+      </p>
+      <button class="btn btn-primary" id="welcomeGotIt" data-i18n="welcome_got_it" style="margin:0 auto;">Got it!</button>
+    </div>
+  </div>
+
+  <!-- ===== TOP BAR ===== -->
+  <div class="topbar">
+    <div class="topbar-brand">
+      <div class="logo">D</div>
+      <span data-i18n="app_title">Desmos Equation Editor</span>
+    </div>
+    <div class="topbar-center">
+      <button class="btn btn-secondary" id="btnUndo" data-i18n-tooltip="undo" data-tooltip="Undo">↩</button>
+      <button class="btn btn-secondary" id="btnRedo" data-i18n-tooltip="redo" data-tooltip="Redo">↪</button>
+      <div style="width:1px;height:20px;background:var(--border);"></div>
+      <button class="btn btn-secondary" id="gridToggle" data-i18n-tooltip="grid_show" data-tooltip="Show Grid" style="font-size:14px;">⊞</button>
+      <button class="btn btn-secondary" id="snapToggle" data-i18n-tooltip="snap_enable" data-tooltip="Snap to Grid" style="font-size:14px;">⊡</button>
+      <div style="width:1px;height:20px;background:var(--border);"></div>
+      <button class="btn btn-primary" id="btnExport" data-i18n="export_desmos">Export to Desmos</button>
+      <button class="btn btn-secondary" id="btnCopyLatex" data-i18n="export_latex">Copy LaTeX</button>
+      <button class="btn btn-secondary" id="btnExportSvg" data-i18n="export_svg">Export SVG</button>
+      <div style="width:1px;height:20px;background:var(--border);"></div>
+      <button class="btn btn-secondary" id="btnSave" style="font-size:14px;" data-i18n-tooltip="toast_saved" data-tooltip="Save">💾</button>
+    </div>
+    <div class="topbar-right">
+      <button class="btn btn-ghost" id="btnFeedback" data-i18n="feedback_btn">Send Feedback</button>
+      <select class="lang-select" id="langSelect">
+        <option value="en">EN</option>
+        <option value="th">TH</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- ===== MAIN LAYOUT ===== -->
+  <div class="app-layout">
+
+    <!-- LEFT TOOLBAR -->
+    <div class="toolbar">
+      <button class="tool-btn active" data-tool="select" data-i18n-tooltip="tool_select" data-tooltip="Select (V)">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M7 2l10 10-4 1 3 6-2 1-3-6-4 3z"/></svg>
+      </button>
+      <button class="tool-btn" data-tool="pen" data-i18n-tooltip="tool_pen" data-tooltip="Pen (P)">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+      </button>
+      <button class="tool-btn" data-tool="line" data-i18n-tooltip="tool_line" data-tooltip="Line (L)">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M4 20L20 4" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+      </button>
+      <button class="tool-btn" data-tool="rect" data-i18n-tooltip="tool_rect" data-tooltip="Rectangle (R)">
+        <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="1" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+      </button>
+      <button class="tool-btn" data-tool="ellipse" data-i18n-tooltip="tool_ellipse" data-tooltip="Ellipse (O)">
+        <svg class="icon" viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="9" ry="7" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+      </button>
+      <div class="tool-divider"></div>
+      <button class="tool-btn" data-tool="erase" data-i18n-tooltip="tool_erase" data-tooltip="Eraser (E)">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M16.24 3.56l4.95 4.94c.78.79.78 2.05 0 2.84L12 20.53a4.01 4.01 0 01-5.66 0L2.81 17c-.78-.78-.78-2.05 0-2.83l10.6-10.61a2.01 2.01 0 012.83 0zM4.22 15.58l3.54 3.53c.78.79 2.04.79 2.83 0l3.53-3.53-4.95-4.95-4.95 4.95z"/></svg>
+      </button>
+      <div class="tool-divider"></div>
+      <button class="tool-btn" data-tool="pan" data-i18n-tooltip="tool_pan" data-tooltip="Pan (H)">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M10 2v6H7l5 5 5-5h-3V2h-4zm0 20v-6H7l5-5 5 5h-3v6h-4zM2 10h6V7l5 5-5 5v-3H2v-4zm20 0h-6V7l-5 5 5 5v-3h6v-4z"/></svg>
+      </button>
+      <button class="tool-btn" data-tool="zoomIn" data-i18n-tooltip="tool_zoom_in" data-tooltip="Zoom In (+)">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/><path d="M12 10h-2v2H9v-2H7V9h2V7h1v2h2v1z"/></svg>
+      </button>
+      <button class="tool-btn" data-tool="zoomOut" data-i18n-tooltip="tool_zoom_out" data-tooltip="Zoom Out (-)">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14zM7 9h5v1H7z"/></svg>
+      </button>
+      <div class="tool-divider"></div>
+      <button class="btn btn-ghost btn-icon" id="btnClear" data-i18n-tooltip="clear" data-tooltip="Clear All" style="margin-top:auto;font-size:14px;">🗑</button>
+    </div>
+
+    <!-- CANVAS AREA -->
+    <div class="canvas-area">
+      <canvas id="drawingCanvas"></canvas>
+      <canvas id="overlayCanvas"></canvas>
+
+      <!-- Stats bar -->
+      <div class="stats-bar">
+        <div class="stat-item">
+          <span class="stat-value" id="statVisitors">0</span>
+          <span class="stat-label" data-i18n="stats_visitors">Visitors</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-value" id="statDrawings">0</span>
+          <span class="stat-label" data-i18n="stats_drawings">Drawings</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-value" id="statExports">0</span>
+          <span class="stat-label" data-i18n="stats_exports">Exports</span>
+        </div>
+      </div>
+
+      <!-- Canvas info -->
+      <div class="canvas-info">
+        <span id="infoCoords">X: 0 Y: 0</span>
+        <span id="infoZoom">Zoom: 100%</span>
+      </div>
+    </div>
+
+    <!-- RIGHT PANEL -->
+    <div class="right-panel">
+
+      <!-- Properties -->
+      <div class="panel-section">
+        <div class="panel-header" data-i18n="sidebar_properties">Properties</div>
+        <div class="prop-row">
+          <span class="prop-label" data-i18n="prop_stroke">Stroke</span>
+          <input type="color" class="prop-color" id="propStrokeColor" value="#e94560">
+        </div>
+        <div class="prop-row">
+          <span class="prop-label" data-i18n="prop_width">Width</span>
+          <input type="range" class="prop-slider" id="propStrokeWidth" min="1" max="20" value="2" step="0.5">
+          <span class="prop-value" id="propWidthVal">2</span>
+        </div>
+        <div class="prop-row">
+          <span class="prop-label" data-i18n="prop_opacity">Opacity</span>
+          <input type="range" class="prop-slider" id="propOpacity" min="0" max="100" value="100">
+          <span class="prop-value">%</span>
+        </div>
+        <div class="prop-row">
+          <span class="prop-label" data-i18n="prop_smooth">Smoothing</span>
+          <input type="range" class="prop-slider" id="propSmooth" min="0" max="100" value="50">
+          <span class="prop-value" id="propSmoothVal">0.5</span>
+        </div>
+      </div>
+
+      <!-- Snap Settings -->
+      <div class="panel-section">
+        <div class="panel-header" data-i18n="snap_enable">Snap to Grid</div>
+        <div class="prop-row">
+          <div class="snap-toggle" id="snapSwitch">
+            <div class="toggle-switch" id="snapSwitchVisual"></div>
+            <span class="toggle-label" data-i18n="snap_disable">Free Draw</span>
+          </div>
+        </div>
+        <div class="prop-row" style="margin-top:8px;">
+          <span class="prop-label" data-i18n="snap_strength">Snap Strength</span>
+          <input type="range" class="prop-slider" id="snapStrength" min="5" max="50" value="20">
+          <span class="prop-value">px</span>
+        </div>
+      </div>
+
+      <!-- Quick Shapes -->
+      <div class="panel-section">
+        <div class="panel-header" data-i18n="presets_title">Quick Shapes</div>
+        <div class="preset-grid">
+          <button class="preset-btn" data-preset="line">
+            <span class="preset-icon">╱</span>
+            <span data-i18n="preset_line">Line</span>
+          </button>
+          <button class="preset-btn" data-preset="circle">
+            <span class="preset-icon">○</span>
+            <span data-i18n="preset_circle">Circle</span>
+          </button>
+          <button class="preset-btn" data-preset="ellipse">
+            <span class="preset-icon">⬮</span>
+            <span data-i18n="preset_ellipse">Ellipse</span>
+          </button>
+          <button class="preset-btn" data-preset="rect">
+            <span class="preset-icon">▭</span>
+            <span data-i18n="preset_rect">Rectangle</span>
+          </button>
+          <button class="preset-btn" data-preset="triangle">
+            <span class="preset-icon">△</span>
+            <span data-i18n="preset_triangle">Triangle</span>
+          </button>
+          <button class="preset-btn" data-preset="sine">
+            <span class="preset-icon">∿</span>
+            <span data-i18n="preset_sine">Sine Wave</span>
+          </button>
+          <button class="preset-btn" data-preset="cosine">
+            <span class="preset-icon">∿</span>
+            <span data-i18n="preset_cosine">Cosine Wave</span>
+          </button>
+          <button class="preset-btn" data-preset="parabola">
+            <span class="preset-icon">⌢</span>
+            <span data-i18n="preset_parabola">Parabola</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Layers -->
+      <div class="panel-section">
+        <div class="panel-header" data-i18n="sidebar_layers">Layers</div>
+        <div class="layer-list" id="layersList"></div>
+      </div>
+
+      <!-- Equations -->
+      <div class="panel-section">
+        <div class="panel-header">LaTeX Equations</div>
+        <div class="equation-list" id="equationsList"></div>
+      </div>
+
+      <!-- Credit -->
+      <div class="panel-section" style="border-bottom:none;text-align:center;">
+        <div style="font-size:10px;color:var(--text-muted);line-height:1.6;">
+          Created by<br>
+          <span style="color:var(--accent);font-weight:600;">nanon dev</span> &
+          <span style="color:var(--accent-blue);font-weight:600;">mimo opencode</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ===== FEEDBACK MODAL ===== -->
+  <div class="modal-overlay" id="feedbackModal">
+    <div class="modal">
+      <h2 data-i18n="feedback_title">Feedback</h2>
+      <form id="feedbackForm">
+        <div class="form-group">
+          <label data-i18n="feedback_name">Name (optional)</label>
+          <input type="text" id="fbName" placeholder="Your name">
+        </div>
+        <div class="form-group">
+          <label data-i18n="feedback_email">Email (optional)</label>
+          <input type="email" id="fbEmail" placeholder="your@email.com">
+        </div>
+        <div class="form-group">
+          <label data-i18n="feedback_message">Your message</label>
+          <textarea id="fbMessage" placeholder="Tell us what you think..." required></textarea>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="feedbackCancel" data-i18n="feedback_cancel">Cancel</button>
+          <button type="submit" class="btn btn-primary" data-i18n="feedback_send">Send</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== CONTEXT MENU ===== -->
+  <div class="context-menu" id="contextMenu">
+    <div class="ctx-item" id="ctxDelete">🗑 <span data-i18n="context_delete">Delete</span></div>
+    <div class="ctx-item" id="ctxDuplicate">📋 <span data-i18n="context_duplicate">Duplicate</span></div>
+    <div class="ctx-divider"></div>
+    <div class="ctx-item" id="ctxBringFront">⬆ <span data-i18n="context_bring_front">Bring to Front</span></div>
+    <div class="ctx-item" id="ctxSendBack">⬇ <span data-i18n="context_send_back">Send to Back</span></div>
+  </div>
+
+  <!-- ===== TOAST CONTAINER ===== -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- ===== DESMOS CALCULATOR (hidden, used for export) ===== -->
+  <div id="desmosCalculator" style="display:none;position:fixed;bottom:0;right:0;width:500px;height:400px;z-index:999;border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;"></div>
+
+  <!-- ===== SCRIPTS ===== -->
+  <script src="js/app.js"></script>
+
+  <!-- Credit in page source -->
+  <!-- Created by nanon dev and mimo opencode -->
+</body>
+</html>

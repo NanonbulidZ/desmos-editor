@@ -769,18 +769,21 @@
     let selectedUser = 'all';
     let cloudData = {};
 
+    let ghFileExists = null;
     async function loadAllData() {
       try {
-        cloudData = await CloudStorage.load();
+        if (ghFileExists !== false) {
+          cloudData = await CloudStorage.load();
+          if (cloudData && cloudData.events) ghFileExists = true;
+        }
       } catch (e) {
         cloudData = CloudStorage.getLocalData();
       }
-      // Also populate localStorage so existing code works
-      if (cloudData.events) localStorage.setItem(EVENTS_KEY, JSON.stringify(cloudData.events));
-      if (cloudData.users) localStorage.setItem(USERS_KEY, JSON.stringify(cloudData.users));
-      if (cloudData.stats) localStorage.setItem(STATS_KEY, JSON.stringify(cloudData.stats));
-      if (cloudData.feedback) localStorage.setItem(FEEDBACK_KEY, JSON.stringify(cloudData.feedback));
-      if (cloudData.equations) localStorage.setItem(EQUATIONS_KEY, JSON.stringify(cloudData.equations));
+      if (cloudData && cloudData.events) localStorage.setItem(EVENTS_KEY, JSON.stringify(cloudData.events));
+      if (cloudData && cloudData.users) localStorage.setItem(USERS_KEY, JSON.stringify(cloudData.users));
+      if (cloudData && cloudData.stats) localStorage.setItem(STATS_KEY, JSON.stringify(cloudData.stats));
+      if (cloudData && cloudData.feedback) localStorage.setItem(FEEDBACK_KEY, JSON.stringify(cloudData.feedback));
+      if (cloudData && cloudData.equations) localStorage.setItem(EQUATIONS_KEY, JSON.stringify(cloudData.equations));
 
       loadStats();
       loadEvents();
@@ -846,22 +849,32 @@
     function loadStats() {
       try {
         const stats = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
-        document.getElementById('statVisitors').textContent = stats.visitors || 0;
-        document.getElementById('statDrawings').textContent = stats.drawings || 0;
-        document.getElementById('statExports').textContent = stats.exports || 0;
+        const sv = document.getElementById('statVisitors');
+        const sd = document.getElementById('statDrawings');
+        const se = document.getElementById('statExports');
+        const sev = document.getElementById('statEvents');
+        const sf = document.getElementById('statFeedback');
+        if (sv) sv.textContent = stats.visitors || 0;
+        if (sd) sd.textContent = stats.drawings || 0;
+        if (se) se.textContent = stats.exports || 0;
 
         const today = new Date().toDateString();
         const todayEvents = allEvents.filter(e => new Date(e.ts).toDateString() === today);
-        document.getElementById('statEvents').textContent = todayEvents.length;
+        if (sev) sev.textContent = todayEvents.length;
 
         const feedback = JSON.parse(localStorage.getItem(FEEDBACK_KEY) || '[]');
-        document.getElementById('statFeedback').textContent = feedback.length;
+        if (sf) sf.textContent = feedback.length;
 
-        document.getElementById('statVisitorsSub').textContent = `Since first visit`;
-        document.getElementById('statDrawingsSub').textContent = `${stats.drawings || 0} total shapes`;
-        document.getElementById('statExportsSub').textContent = `${stats.exports || 0} equations sent`;
-        document.getElementById('statEventsSub').textContent = `${todayEvents.length} today`;
-        document.getElementById('statFeedbackSub').textContent = `${feedback.length} messages received`;
+        const svs = document.getElementById('statVisitorsSub');
+        const sds = document.getElementById('statDrawingsSub');
+        const ses = document.getElementById('statExportsSub');
+        const sesv = document.getElementById('statEventsSub');
+        const sfs = document.getElementById('statFeedbackSub');
+        if (svs) svs.textContent = `Since first visit`;
+        if (sds) sds.textContent = `${stats.drawings || 0} total shapes`;
+        if (ses) ses.textContent = `${stats.exports || 0} equations sent`;
+        if (sesv) sesv.textContent = `${todayEvents.length} today`;
+        if (sfs) sfs.textContent = `${feedback.length} messages received`;
       } catch (e) {
         console.error('Stats load error:', e);
       }
@@ -871,11 +884,13 @@
     function loadEvents() {
       try {
         allEvents = JSON.parse(localStorage.getItem(EVENTS_KEY) || '[]');
-        document.getElementById('feedCount').textContent = `${allEvents.length} events`;
+        const feedCountEl = document.getElementById('feedCount');
+        if (feedCountEl) feedCountEl.textContent = `${allEvents.length} events`;
 
         const today = new Date().toDateString();
         const todayEvents = allEvents.filter(e => new Date(e.ts).toDateString() === today);
-        document.getElementById('statEvents').textContent = todayEvents.length;
+        const statEl = document.getElementById('statEvents');
+        if (statEl) statEl.textContent = todayEvents.length;
 
         renderEvents(allEvents.slice(-100).reverse());
       } catch (e) {
@@ -886,6 +901,7 @@
     function renderEvents(events) {
       const list = document.getElementById('feedList');
       const empty = document.getElementById('feedEmpty');
+      if (!list || !empty) return;
 
       if (events.length === 0) {
         empty.style.display = 'block';
@@ -1180,13 +1196,14 @@
     loadAllData();
     setInterval(loadAllData, 5000);
     setInterval(async () => {
+      if (!CloudStorage.hasToken()) return;
       try {
-        cloudData = await CloudStorage.load();
-        if (cloudData.events) localStorage.setItem(EVENTS_KEY, JSON.stringify(cloudData.events));
-        if (cloudData.users) localStorage.setItem(USERS_KEY, JSON.stringify(cloudData.users));
-        if (cloudData.stats) localStorage.setItem(STATS_KEY, JSON.stringify(cloudData.stats));
-        if (cloudData.feedback) localStorage.setItem(FEEDBACK_KEY, JSON.stringify(cloudData.feedback));
-        if (cloudData.equations) localStorage.setItem(EQUATIONS_KEY, JSON.stringify(cloudData.equations));
+        const data = await CloudStorage.load();
+        if (data.events) localStorage.setItem(EVENTS_KEY, JSON.stringify(data.events));
+        if (data.users) localStorage.setItem(USERS_KEY, JSON.stringify(data.users));
+        if (data.stats) localStorage.setItem(STATS_KEY, JSON.stringify(data.stats));
+        if (data.feedback) localStorage.setItem(FEEDBACK_KEY, JSON.stringify(data.feedback));
+        if (data.equations) localStorage.setItem(EQUATIONS_KEY, JSON.stringify(data.equations));
         loadAllData();
       } catch (e) {}
     }, 30000);

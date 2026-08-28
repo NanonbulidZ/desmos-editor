@@ -1141,7 +1141,7 @@
       const c = clampDesmos(x1);
       const yMin = clampDesmos(Math.min(y1, y2));
       const yMax = clampDesmos(Math.max(y1, y2));
-      return `x = ${r(c)}(${r(yMin)}<y<${r(yMax)})`;
+      return `x = ${r(c)}\\left\\{${r(yMin)}\\le y\\le${r(yMax)}\\right\\}`;
     }
 
     const m = dy / dx;
@@ -1152,12 +1152,12 @@
     // Horizontal line: y = c
     if (Math.abs(m) < 0.001) {
       const c = clampDesmos(b);
-      return `y = ${r(c)}(${r(xMin)}<x<${r(xMax)})`;
+      return `y = ${r(c)}\\left\\{${r(xMin)}\\le x\\le${r(xMax)}\\right\\}`;
     }
 
     // Diagonal: y = mx+b
     const sign = b >= 0 ? '+' : '';
-    return `y = ${r(m)}x${sign}${r(b)}(${r(xMin)}<x<${r(xMax)})`;
+    return `y = ${r(m)}x${sign}${r(b)}\\left\\{${r(xMin)}\\le x\\le${r(xMax)}\\right\\}`;
   }
 
   function r(v) {

@@ -1158,20 +1158,25 @@
   function formatSeg(x1, y1, x2, y2) {
     const dx = x2 - x1;
     const dy = y2 - y1;
+    const OVL = 0.03;
 
     if (Math.abs(dx) < 0.01) {
-      return `x = ${x1}\\left\\{${Math.min(y1,y2)}\\le y\\le${Math.max(y1,y2)}\\right\\}`;
+      const yA = Math.min(y1,y2) - OVL;
+      const yB = Math.max(y1,y2) + OVL;
+      return `x = ${x1}\\left\\{${r(yA)}\\le y\\le${r(yB)}\\right\\}`;
     }
 
     const m = dy / dx;
     const b = y1 - m * x1;
+    const xA = Math.min(x1,x2) - OVL;
+    const xB = Math.max(x1,x2) + OVL;
 
     if (Math.abs(m) < 0.001) {
-      return `y = ${r(b)}\\left\\{${Math.min(x1,x2)}\\le x\\le${Math.max(x1,x2)}\\right\\}`;
+      return `y = ${r(b)}\\left\\{${r(xA)}\\le x\\le${r(xB)}\\right\\}`;
     }
 
     const sign = b >= 0 ? '+' : '';
-    return `y = ${rd(m)}x${sign}${rd(b)}\\left\\{${Math.min(x1,x2)}\\le x\\le${Math.max(x1,x2)}\\right\\}`;
+    return `y = ${rd(m)}x${sign}${rd(b)}\\left\\{${r(xA)}\\le x\\le${r(xB)}\\right\\}`;
   }
 
   function r(v) {

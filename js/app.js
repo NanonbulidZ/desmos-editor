@@ -857,7 +857,8 @@
         document.getElementById('traceFileInput').click();
         return;
       }
-      tracePoints.push({ x: world.x, y: world.y });
+      const snapped = snapToEdge(world.x, world.y);
+      tracePoints.push({ x: snapped.x, y: snapped.y });
       render();
       return;
     }
@@ -1202,6 +1203,74 @@
   }
 
   // ===== TRACE TOOL =====
+  let traceEdgeData = null;
+  let traceEdgeW = 0;
+  let traceEdgeH = 0;
+
+  function detectEdges(img) {
+    const offscreen = document.createElement('canvas');
+    const w = img.naturalWidth;
+    const h = img.naturalHeight;
+    offscreen.width = w;
+    offscreen.height = h;
+    const octx = offscreen.getContext('2d');
+    octx.drawImage(img, 0, 0);
+    const imageData = octx.getImageData(0, 0, w, h);
+    const data = imageData.data;
+
+    const gray = new Uint8Array(w * h);
+    for (let i = 0; i < w * h; i++) {
+      const idx = i * 4;
+      gray[i] = Math.round(0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2]);
+    }
+
+    const edges = new Uint8Array(w * h);
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const gx = -gray[(y-1)*w+(x-1)] + gray[(y-1)*w+(x+1)]
+                   -2*gray[y*w+(x-1)] + 2*gray[y*w+(x+1)]
+                   -gray[(y+1)*w+(x-1)] + gray[(y+1)*w+(x+1)];
+        const gy = -gray[(y-1)*w+(x-1)] - 2*gray[(y-1)*w+x] - gray[(y-1)*w+(x+1)]
+                   +gray[(y+1)*w+(x-1)] + 2*gray[(y+1)*w+x] + gray[(y+1)*w+(x+1)];
+        const mag = Math.sqrt(gx * gx + gy * gy);
+        edges[y * w + x] = mag > 30 ? 255 : 0;
+      }
+    }
+
+    traceEdgeData = edges;
+    traceEdgeW = w;
+    traceEdgeH = h;
+  }
+
+  function snapToEdge(worldX, worldY) {
+    if (!traceEdgeData) return { x: worldX, y: worldY };
+
+    const imgX = ((worldX - traceImageX) / traceImageW) * traceEdgeW;
+    const imgY = ((worldY - traceImageY) / traceImageH) * traceEdgeH;
+
+    const searchRadius = 20;
+    let bestDist = Infinity;
+    let bestX = worldX;
+    let bestY = worldY;
+
+    for (let dy = -searchRadius; dy <= searchRadius; dy++) {
+      for (let dx = -searchRadius; dx <= searchRadius; dx++) {
+        const px = Math.round(imgX + dx);
+        const py = Math.round(imgY + dy);
+        if (px < 0 || px >= traceEdgeW || py < 0 || py >= traceEdgeH) continue;
+        if (traceEdgeData[py * traceEdgeW + px] === 0) continue;
+        const dist = dx * dx + dy * dy;
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestX = traceImageX + (px / traceEdgeW) * traceImageW;
+          bestY = traceImageY + (py / traceEdgeH) * traceImageH;
+        }
+      }
+    }
+
+    return { x: bestX, y: bestY };
+  }
+
   function finishTrace() {
     if (tracePoints.length < 2) return;
     pushUndo();
@@ -1221,6 +1290,7 @@
     trackEvent('shape', '🖼', `Traced <strong>${tracePoints.length} points</strong> from image`);
     tracePoints = [];
     traceImage = null;
+    traceEdgeData = null;
     saveCanvasSnapshot();
     updateLayersList();
     render();
@@ -1249,7 +1319,8 @@
         const center = screenToWorld(canvasWidth / 2, canvasHeight / 2);
         traceImageX = center.x - traceImageW / 2;
         traceImageY = center.y - traceImageH / 2;
-        showToast('Image loaded! Click points along the edges. Press Enter to finish.', 'success');
+        detectEdges(img);
+        showToast('Image loaded! Click to snap to edges. Press Enter to finish.', 'success');
         render();
       };
       img.src = URL.createObjectURL(file);

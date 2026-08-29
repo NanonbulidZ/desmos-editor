@@ -592,22 +592,36 @@
 
     drawGrid();
 
-    // Draw trace image
+    // Draw trace image and polygon
     if (traceImage && state.tool === 'trace') {
       const s = worldToScreen(traceImageX, traceImageY);
       ctx.save();
-      ctx.globalAlpha = 0.4;
+      ctx.globalAlpha = 0.35;
       ctx.drawImage(traceImage, s.x, s.y, traceImageW * state.zoom, traceImageH * state.zoom);
       ctx.restore();
 
-      // Draw trace points and lines
       if (tracePoints.length > 0) {
         ctx.save();
+
+        // Draw filled polygon
+        if (tracePoints.length >= 3) {
+          ctx.beginPath();
+          const s0 = worldToScreen(tracePoints[0].x, tracePoints[0].y);
+          ctx.moveTo(s0.x, s0.y);
+          for (let i = 1; i < tracePoints.length; i++) {
+            const sp = worldToScreen(tracePoints[i].x, tracePoints[i].y);
+            ctx.lineTo(sp.x, sp.y);
+          }
+          ctx.closePath();
+          ctx.fillStyle = state.color + '15';
+          ctx.fill();
+        }
+
+        // Draw edges
         ctx.strokeStyle = state.color;
         ctx.lineWidth = state.strokeWidth;
+        ctx.setLineDash([]);
         ctx.globalAlpha = 0.9;
-
-        // Draw lines between points
         if (tracePoints.length >= 2) {
           ctx.beginPath();
           const s0 = worldToScreen(tracePoints[0].x, tracePoints[0].y);
@@ -616,43 +630,46 @@
             const sp = worldToScreen(tracePoints[i].x, tracePoints[i].y);
             ctx.lineTo(sp.x, sp.y);
           }
+          ctx.closePath();
           ctx.stroke();
         }
 
-        // Preview line from last point to mouse
-        const lastPt = tracePoints[tracePoints.length - 1];
-        const sLast = worldToScreen(lastPt.x, lastPt.y);
-        const mouseWorld = screenToWorld(state.mouseX, state.mouseY);
-        const sMouse = worldToScreen(mouseWorld.x, mouseWorld.y);
-        ctx.setLineDash([6, 4]);
-        ctx.globalAlpha = 0.5;
-        ctx.beginPath();
-        ctx.moveTo(sLast.x, sLast.y);
-        ctx.lineTo(sMouse.x, sMouse.y);
-        ctx.stroke();
-        ctx.setLineDash([]);
-
-        // Draw dots
-        ctx.fillStyle = state.color;
-        tracePoints.forEach((pt, i) => {
-          const sp = worldToScreen(pt.x, pt.y);
-          ctx.beginPath();
-          ctx.arc(sp.x, sp.y, i === 0 ? 5 : 3, 0, Math.PI * 2);
-          ctx.fill();
-        });
-
-        // Close path preview (dotted line from last to first)
-        if (tracePoints.length >= 3) {
-          const sFirst = worldToScreen(tracePoints[0].x, tracePoints[0].y);
-          ctx.strokeStyle = '#5dade2';
-          ctx.setLineDash([4, 4]);
+        // Draw preview line from last point to mouse
+        if (tracePoints.length >= 1 && traceDraggingIdx < 0) {
+          const lastPt = tracePoints[tracePoints.length - 1];
+          const sLast = worldToScreen(lastPt.x, lastPt.y);
+          const mouseWorld = screenToWorld(state.mouseX, state.mouseY);
+          const sMouse = worldToScreen(mouseWorld.x, mouseWorld.y);
+          ctx.setLineDash([6, 4]);
           ctx.globalAlpha = 0.4;
           ctx.beginPath();
           ctx.moveTo(sLast.x, sLast.y);
-          ctx.lineTo(sFirst.x, sFirst.y);
+          ctx.lineTo(sMouse.x, sMouse.y);
           ctx.stroke();
           ctx.setLineDash([]);
         }
+
+        // Draw points
+        tracePoints.forEach((pt, i) => {
+          const sp = worldToScreen(pt.x, pt.y);
+          ctx.beginPath();
+          ctx.arc(sp.x, sp.y, 5, 0, Math.PI * 2);
+          ctx.fillStyle = i === traceHoverIdx ? '#fff' : state.color;
+          ctx.fill();
+          ctx.strokeStyle = '#fff';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        });
+
+        // Point count label
+        const sFirst = worldToScreen(tracePoints[0].x, tracePoints[0].y);
+        ctx.font = '10px JetBrains Mono, monospace';
+        ctx.fillStyle = 'rgba(13,17,23,0.85)';
+        const label = `${tracePoints.length} pts — Enter to finish`;
+        const tm = ctx.measureText(label);
+        ctx.fillRect(sFirst.x - 2, sFirst.y - 20, tm.width + 6, 14);
+        ctx.fillStyle = '#4ecdc4';
+        ctx.fillText(label, sFirst.x, sFirst.y - 10);
 
         ctx.restore();
       }
@@ -778,6 +795,7 @@
     canvas.addEventListener('mouseleave', onMouseUp);
     canvas.addEventListener('wheel', onWheel, { passive: false });
     canvas.addEventListener('contextmenu', onContextMenu);
+    canvas.addEventListener('dblclick', onDoubleClick);
     canvas.addEventListener('touchstart', onTouchStart, { passive: false });
     canvas.addEventListener('touchmove', onTouchMove, { passive: false });
     canvas.addEventListener('touchend', onTouchEnd);
@@ -863,9 +881,6 @@
         state.isDragging = true;
         return;
       }
-      const snapped = snapToEdge(world.x, world.y);
-      tracePoints.push({ x: snapped.x, y: snapped.y });
-      render();
       return;
     }
 
@@ -895,6 +910,13 @@
       const world = screenToWorld(state.mouseX, state.mouseY);
       const snapped = snapToEdge(world.x, world.y);
       tracePoints[traceDraggingIdx] = { x: snapped.x, y: snapped.y };
+      render();
+      return;
+    }
+
+    if (state.tool === 'trace' && traceImage) {
+      traceHoverIdx = getTracePointAt(state.mouseX, state.mouseY);
+      canvas.style.cursor = traceHoverIdx >= 0 ? 'grab' : 'crosshair';
       render();
       return;
     }
@@ -1048,17 +1070,32 @@
 
     if (state.tool === 'trace' && traceImage) {
       const hitIdx = getTracePointAt(sx, sy);
-      if (hitIdx >= 0) {
+      if (hitIdx >= 0 && tracePoints.length > 3) {
         tracePoints.splice(hitIdx, 1);
         render();
-        return;
       }
+      return;
     }
 
     const idx = findShapeAt(sx, sy);
     if (idx !== null) {
       state.selectedShape = idx;
       showContextMenu(e.clientX, e.clientY, idx);
+    }
+  }
+
+  function onDoubleClick(e) {
+    if (state.tool !== 'trace' || !traceImage) return;
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+    const edgeIdx = getTraceEdgeAt(sx, sy);
+    if (edgeIdx >= 0) {
+      const world = screenToWorld(sx, sy);
+      const snapped = snapToEdge(world.x, world.y);
+      tracePoints.splice(edgeIdx + 1, 0, { x: snapped.x, y: snapped.y });
+      render();
     }
   }
 
@@ -1205,8 +1242,10 @@
 
   // ===== TOOL MANAGEMENT =====
   function setTool(tool) {
-    if (state.tool === 'trace' && tool !== 'trace' && tracePoints.length > 0) {
+    if (state.tool === 'trace' && tool !== 'trace') {
       tracePoints = [];
+      traceImage = null;
+      traceEdgeData = null;
       render();
     }
     state.tool = tool;
@@ -1231,46 +1270,8 @@
   }
 
   // ===== TRACE TOOL =====
-  let traceEdgeData = null;
-  let traceEdgeW = 0;
-  let traceEdgeH = 0;
   let traceDraggingIdx = -1;
   let traceHoverIdx = -1;
-
-  function detectEdges(img) {
-    const offscreen = document.createElement('canvas');
-    const w = img.naturalWidth;
-    const h = img.naturalHeight;
-    offscreen.width = w;
-    offscreen.height = h;
-    const octx = offscreen.getContext('2d');
-    octx.drawImage(img, 0, 0);
-    const imageData = octx.getImageData(0, 0, w, h);
-    const data = imageData.data;
-
-    const gray = new Uint8Array(w * h);
-    for (let i = 0; i < w * h; i++) {
-      const idx = i * 4;
-      gray[i] = Math.round(0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2]);
-    }
-
-    const edges = new Uint8Array(w * h);
-    for (let y = 1; y < h - 1; y++) {
-      for (let x = 1; x < w - 1; x++) {
-        const gx = -gray[(y-1)*w+(x-1)] + gray[(y-1)*w+(x+1)]
-                   -2*gray[y*w+(x-1)] + 2*gray[y*w+(x+1)]
-                   -gray[(y+1)*w+(x-1)] + gray[(y+1)*w+(x+1)];
-        const gy = -gray[(y-1)*w+(x-1)] - 2*gray[(y-1)*w+x] - gray[(y-1)*w+(x+1)]
-                   +gray[(y+1)*w+(x-1)] + 2*gray[(y+1)*w+x] + gray[(y+1)*w+(x+1)];
-        const mag = Math.sqrt(gx * gx + gy * gy);
-        edges[y * w + x] = mag > 30 ? 255 : 0;
-      }
-    }
-
-    traceEdgeData = edges;
-    traceEdgeW = w;
-    traceEdgeH = h;
-  }
 
   function snapToEdge(worldX, worldY) {
     if (!traceEdgeData) return { x: worldX, y: worldY };
@@ -1297,117 +1298,37 @@
     return { x: bestX, y: bestY };
   }
 
-  function autoDetectCorners() {
-    if (!traceEdgeData) return;
-    const w = traceEdgeW;
-    const h = traceEdgeH;
-    const edge = traceEdgeData;
-
-    // Trace contours by walking edge pixels
-    const visited = new Uint8Array(w * h);
-    const contours = [];
-
-    for (let sy = 0; sy < h; sy++) {
-      for (let sx = 0; sx < w; sx++) {
-        if (edge[sy * w + sx] === 0 || visited[sy * w + sx]) continue;
-        const contour = [];
-        let x = sx, y = sy;
-        while (true) {
-          visited[y * w + x] = 1;
-          contour.push({ x, y });
-          let found = false;
-          for (let dy = -1; dy <= 1 && !found; dy++) {
-            for (let dx = -1; dx <= 1 && !found; dx++) {
-              if (dx === 0 && dy === 0) continue;
-              const nx = x + dx, ny = y + dy;
-              if (nx >= 0 && nx < w && ny >= 0 && ny < h && edge[ny * w + nx] && !visited[ny * w + nx]) {
-                x = nx; y = ny; found = true;
-              }
-            }
-          }
-          if (!found) break;
-        }
-        if (contour.length >= 20) contours.push(contour);
-      }
-    }
-
-    // Score corners on each contour separately
-    const cornerScore = (contour, i, lookBack, lookFwd) => {
-      const len = contour.length;
-      const p0 = contour[(i - lookBack + len) % len];
-      const p1 = contour[i];
-      const p2 = contour[(i + lookFwd) % len];
-      const a1 = Math.atan2(p1.y - p0.y, p1.x - p0.x);
-      const a2 = Math.atan2(p2.y - p1.y, p2.x - p1.x);
-      let diff = Math.abs(a2 - a1);
-      if (diff > Math.PI) diff = 2 * Math.PI - diff;
-      return diff;
-    };
-
-    // For each contour, find corners, keep points IN CONTOUR ORDER
-    const allContourCorners = [];
-    const threshold = 0.35;
-    const step = 2;
-
-    contours.forEach(contour => {
-      const len = contour.length;
-      const candidates = [];
-      for (let i = 0; i < len; i += step) {
-        const score = cornerScore(contour, i, 10, 10);
-        if (score > threshold) {
-          candidates.push({ idx: i, score });
-        }
-      }
-      // Non-maximum suppression within this contour
-      candidates.sort((a, b) => b.score - a.score);
-      const kept = [];
-      candidates.forEach(c => {
-        const minDist = 12;
-        if (kept.every(k => {
-          const diff = Math.abs(k.idx - c.idx);
-          return diff > minDist && diff < len - minDist;
-        })) {
-          kept.push(c);
-        }
-      });
-      // Sort kept by index to maintain contour order
-      kept.sort((a, b) => a.idx - b.idx);
-      if (kept.length >= 3) {
-        allContourCorners.push(kept.map(c => {
-          const p = contour[c.idx];
-          return {
-            x: traceImageX + (p.x / w) * traceImageW,
-            y: traceImageY + (p.y / h) * traceImageH,
-            score: c.score
-          };
-        }));
-      }
-    });
-
-    if (allContourCorners.length === 0) {
-      showToast('No edges detected. Try a higher-contrast image.', 'error');
-      return;
-    }
-
-    // Pick the contour with the most corners
-    allContourCorners.sort((a, b) => b.length - a.length);
-    tracePoints = allContourCorners[0];
-
-    showToast(`Found ${tracePoints.length} corners. Drag to adjust, Enter to finish.`, 'success');
-    render();
-  }
-
   function getTracePointAt(sx, sy) {
     for (let i = 0; i < tracePoints.length; i++) {
       const sp = worldToScreen(tracePoints[i].x, tracePoints[i].y);
       const dist = Math.hypot(sx - sp.x, sy - sp.y);
+      if (dist < 10) return i;
+    }
+    return -1;
+  }
+
+  function getTraceEdgeAt(sx, sy) {
+    for (let i = 0; i < tracePoints.length; i++) {
+      const a = tracePoints[i];
+      const b = tracePoints[(i + 1) % tracePoints.length];
+      const sa = worldToScreen(a.x, a.y);
+      const sb = worldToScreen(b.x, b.y);
+      const dx = sb.x - sa.x;
+      const dy = sb.y - sa.y;
+      const lenSq = dx * dx + dy * dy;
+      if (lenSq < 1) continue;
+      let t = ((sx - sa.x) * dx + (sy - sa.y) * dy) / lenSq;
+      t = Math.max(0, Math.min(1, t));
+      const px = sa.x + t * dx;
+      const py = sa.y + t * dy;
+      const dist = Math.hypot(sx - px, sy - py);
       if (dist < 8) return i;
     }
     return -1;
   }
 
   function finishTrace() {
-    if (tracePoints.length < 2) return;
+    if (tracePoints.length < 3) return;
     pushUndo();
     state.shapes.push({
       type: 'path',
@@ -1424,21 +1345,17 @@
     saveStats();
     trackEvent('shape', '🖼', `Traced <strong>${tracePoints.length} points</strong> from image`);
     tracePoints = [];
-    traceImage = null;
-    traceEdgeData = null;
     traceDraggingIdx = -1;
     saveCanvasSnapshot();
     updateLayersList();
     render();
-    showToast('Trace complete! Shape created.', 'success');
+    showToast('Shape created! Click trace again to trace another shape.', 'success');
   }
 
   function cancelTrace() {
     tracePoints = [];
-    traceImage = null;
-    traceEdgeData = null;
     traceDraggingIdx = -1;
-    render();
+    initTracePolygon();
   }
 
   function initTraceTool() {
@@ -1465,11 +1382,53 @@
         traceImageX = center.x - traceImageW / 2;
         traceImageY = center.y - traceImageH / 2;
         detectEdges(img);
-        autoDetectCorners();
+        initTracePolygon();
       };
       img.src = URL.createObjectURL(file);
       fileInput.value = '';
     });
+  }
+
+  function detectEdges(img) {
+    const offscreen = document.createElement('canvas');
+    offscreen.width = img.naturalWidth;
+    offscreen.height = img.naturalHeight;
+    const octx = offscreen.getContext('2d');
+    octx.drawImage(img, 0, 0);
+    const imageData = octx.getImageData(0, 0, offscreen.width, offscreen.height);
+    const data = imageData.data;
+    const w = offscreen.width, h = offscreen.height;
+    const gray = new Uint8Array(w * h);
+    for (let i = 0; i < w * h; i++) {
+      const idx = i * 4;
+      gray[i] = Math.round(0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2]);
+    }
+    const edges = new Uint8Array(w * h);
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const gx = -gray[(y-1)*w+(x-1)] + gray[(y-1)*w+(x+1)]
+                   -2*gray[y*w+(x-1)] + 2*gray[y*w+(x+1)]
+                   -gray[(y+1)*w+(x-1)] + gray[(y+1)*w+(x+1)];
+        const gy = -gray[(y-1)*w+(x-1)] - 2*gray[(y-1)*w+x] - gray[(y-1)*w+(x+1)]
+                   +gray[(y+1)*w+(x-1)] + 2*gray[(y+1)*w+x] + gray[(y+1)*w+(x+1)];
+        edges[y * w + x] = Math.sqrt(gx * gx + gy * gy) > 30 ? 255 : 0;
+      }
+    }
+    traceEdgeData = edges;
+    traceEdgeW = w;
+    traceEdgeH = h;
+  }
+
+  function initTracePolygon() {
+    const pad = 0.1;
+    tracePoints = [
+      { x: traceImageX + traceImageW * pad, y: traceImageY + traceImageH * pad },
+      { x: traceImageX + traceImageW * (1 - pad), y: traceImageY + traceImageH * pad },
+      { x: traceImageX + traceImageW * (1 - pad), y: traceImageY + traceImageH * (1 - pad) },
+      { x: traceImageX + traceImageW * pad, y: traceImageY + traceImageH * (1 - pad) }
+    ];
+    showToast('Drag corners to shape. Double-click edge to add point. Right-click to remove. Enter to finish.', 'success');
+    render();
   }
 
   // ===== TOGGLE FUNCTIONS =====

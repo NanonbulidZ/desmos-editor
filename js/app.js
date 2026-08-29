@@ -19,7 +19,7 @@
   function worldToDesmos(wx, wy) {
     const dx = wx / DESMOS_SCALE;
     const dy = -wy / DESMOS_SCALE;
-    return { x: clampDesmos(dx), y: clampDesmos(dy) };
+    return { x: dx, y: dy };
   }
 
   function desmosToWorld(dx, dy) {

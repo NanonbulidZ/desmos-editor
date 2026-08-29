@@ -600,18 +600,10 @@
     </div>
     <div class="header-right">
       <span id="adminUser" style="font-size:12px;color:var(--text2);"></span>
-      <span id="syncStatus" style="font-size:11px;margin-right:8px;"></span>
       <button class="refresh-btn" onclick="loadAllData()">↻ Refresh</button>
       <button class="refresh-btn" onclick="handleLogout()" style="color:var(--accent);">Logout</button>
       <a href="index.html" class="back-link">← Back to Editor</a>
     </div>
-  </div>
-
-  <!-- GITHUB TOKEN SETUP -->
-  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:12px 16px;margin:0 20px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-    <span style="font-size:12px;color:var(--text2);white-space:nowrap;">GitHub Token (for cloud sync):</span>
-    <input id="ghTokenInput" type="password" placeholder="ghp_xxxxxxxxxxxx" style="flex:1;min-width:200px;padding:6px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:12px;font-family:monospace;">
-    <button onclick="saveGitHubToken()" style="padding:6px 14px;background:var(--accent);border:none;border-radius:var(--radius);color:#fff;font-size:12px;cursor:pointer;">Save Token</button>
   </div>
 
   <!-- STATS -->
@@ -756,7 +748,6 @@
     </div>
   </div>
 
-  <script src="js/storage.js"></script>
   <script>
     const FEEDBACK_KEY = 'desmos-editor-feedback';
     const EVENTS_KEY = 'desmos-editor-events';
@@ -767,53 +758,14 @@
 
     let allEvents = [];
     let selectedUser = 'all';
-    let cloudData = {};
 
-    let ghFileExists = null;
-    async function loadAllData() {
-      try {
-        if (ghFileExists !== false) {
-          cloudData = await CloudStorage.load();
-          if (cloudData && cloudData.events) ghFileExists = true;
-        }
-      } catch (e) {
-        cloudData = CloudStorage.getLocalData();
-      }
-      if (cloudData && cloudData.events) localStorage.setItem(EVENTS_KEY, JSON.stringify(cloudData.events));
-      if (cloudData && cloudData.users) localStorage.setItem(USERS_KEY, JSON.stringify(cloudData.users));
-      if (cloudData && cloudData.stats) localStorage.setItem(STATS_KEY, JSON.stringify(cloudData.stats));
-      if (cloudData && cloudData.feedback) localStorage.setItem(FEEDBACK_KEY, JSON.stringify(cloudData.feedback));
-      if (cloudData && cloudData.equations) localStorage.setItem(EQUATIONS_KEY, JSON.stringify(cloudData.equations));
-
+    function loadAllData() {
       loadStats();
       loadEvents();
       loadFeedback();
       loadUserList();
       loadCanvasSnapshot();
       loadEquations();
-      updateSyncStatus();
-    }
-
-    function updateSyncStatus() {
-      const el = document.getElementById('syncStatus');
-      if (!el) return;
-      if (CloudStorage.hasToken()) {
-        el.textContent = '☁ Cloud sync ON';
-        el.style.color = '#22c55e';
-      } else {
-        el.textContent = '📱 Local only (add GitHub token for cloud sync)';
-        el.style.color = '#eab308';
-      }
-    }
-
-    function saveGitHubToken() {
-      const input = document.getElementById('ghTokenInput');
-      const token = input.value.trim();
-      if (!token) return;
-      CloudStorage.setToken(token);
-      input.value = '';
-      input.placeholder = 'Token saved!';
-      loadAllData();
     }
 
     // ===== USER SELECTOR =====
@@ -1195,18 +1147,6 @@
     // ===== AUTO REFRESH =====
     loadAllData();
     setInterval(loadAllData, 5000);
-    setInterval(async () => {
-      if (!CloudStorage.hasToken()) return;
-      try {
-        const data = await CloudStorage.load();
-        if (data.events) localStorage.setItem(EVENTS_KEY, JSON.stringify(data.events));
-        if (data.users) localStorage.setItem(USERS_KEY, JSON.stringify(data.users));
-        if (data.stats) localStorage.setItem(STATS_KEY, JSON.stringify(data.stats));
-        if (data.feedback) localStorage.setItem(FEEDBACK_KEY, JSON.stringify(data.feedback));
-        if (data.equations) localStorage.setItem(EQUATIONS_KEY, JSON.stringify(data.equations));
-        loadAllData();
-      } catch (e) {}
-    }, 30000);
 
     // ===== STORAGE EVENT (cross-tab sync) =====
     window.addEventListener('storage', (e) => {

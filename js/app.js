@@ -80,15 +80,7 @@
   }
 
   function syncDataToCloud() {
-    if (typeof CloudStorage === 'undefined') return;
-    const data = {
-      events: JSON.parse(localStorage.getItem(EVENTS_KEY) || '[]'),
-      users: JSON.parse(localStorage.getItem(USERS_KEY) || '{}'),
-      equations: JSON.parse(localStorage.getItem(EQUATIONS_KEY) || '{}'),
-      stats: JSON.parse(localStorage.getItem('desmos-editor-stats') || '{"visitors":0,"drawings":0,"exports":0}'),
-      feedback: JSON.parse(localStorage.getItem('desmos-editor-feedback') || '[]')
-    };
-    CloudStorage.save(data);
+    // Cloud sync disabled for now
   }
 
   function saveCanvasSnapshot() {
@@ -1160,8 +1152,6 @@
   // ===== SIMPLE LINE SEGMENT EQUATIONS =====
   // Format: y = mx+b(xmin<x<xmax) or x = c(ymin<y<ymax)
   function formatLineSeg(x1, y1, x2, y2) {
-    x1 = clampDesmos(x1); y1 = clampDesmos(y1);
-    x2 = clampDesmos(x2); y2 = clampDesmos(y2);
     return formatSeg(r(x1), r(y1), r(x2), r(y2));
   }
 
@@ -1235,10 +1225,10 @@
       case 'rect': {
         const tl = worldToDesmos(shape.x, shape.y);
         const br = worldToDesmos(shape.x + shape.width, shape.y + shape.height);
-        const L = r(clampDesmos(Math.min(tl.x, br.x)));
-        const R = r(clampDesmos(Math.max(tl.x, br.x)));
-        const T = r(clampDesmos(Math.max(tl.y, br.y)));
-        const B = r(clampDesmos(Math.min(tl.y, br.y)));
+        const L = r(Math.min(tl.x, br.x));
+        const R = r(Math.max(tl.x, br.x));
+        const T = r(Math.max(tl.y, br.y));
+        const B = r(Math.min(tl.y, br.y));
         return [
           formatSeg(L, T, R, T),
           formatSeg(R, T, R, B),
@@ -1248,8 +1238,8 @@
       }
       case 'ellipse': {
         const d = worldToDesmos(shape.cx, shape.cy);
-        const cx = clampDesmos(d.x);
-        const cy = clampDesmos(d.y);
+        const cx = d.x;
+        const cy = d.y;
         const rx = Math.abs(shape.rx / DESMOS_SCALE);
         const ry = Math.abs(shape.ry / DESMOS_SCALE);
         const numSegs = 24;
@@ -1258,8 +1248,8 @@
         const segs = [];
         for (let i = 1; i <= numSegs; i++) {
           const a = (i / numSegs) * Math.PI * 2;
-          const curX = r(clampDesmos(cx + rx * Math.cos(a)));
-          const curY = r(clampDesmos(cy + ry * Math.sin(a)));
+          const curX = r(cx + rx * Math.cos(a));
+          const curY = r(cy + ry * Math.sin(a));
           segs.push(formatSeg(prevX, prevY, curX, curY));
           prevX = curX;
           prevY = curY;
@@ -1270,7 +1260,7 @@
         const pts = shape.points.map(p => worldToDesmos(p.x, p.y));
         const simplified = simplifyPath(pts);
         if (simplified.length < 2) return '';
-        const rounded = simplified.map(p => ({ x: r(clampDesmos(p.x)), y: r(clampDesmos(p.y)) }));
+        const rounded = simplified.map(p => ({ x: r(p.x), y: r(p.y) }));
         const segs = [];
         for (let i = 0; i < rounded.length - 1; i++) {
           segs.push(formatSeg(rounded[i].x, rounded[i].y, rounded[i + 1].x, rounded[i + 1].y));
@@ -1312,7 +1302,20 @@
           expressions: true, settingsMenu: false, zoomButtons: true,
           keypad: false, border: true, lockViewport: false
         });
-        calc.setMathBounds({ left: -DESMOS_RANGE, right: DESMOS_RANGE, bottom: -DESMOS_RANGE, top: DESMOS_RANGE });
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        state.shapes.forEach(s => {
+          const b = getShapeBounds(s);
+          const tl = worldToDesmos(b.x, b.y);
+          const br = worldToDesmos(b.x + b.w, b.y + b.h);
+          minX = Math.min(minX, tl.x, br.x);
+          maxX = Math.max(maxX, tl.x, br.x);
+          minY = Math.min(minY, tl.y, br.y);
+          maxY = Math.max(maxY, tl.y, br.y);
+        });
+        if (!isFinite(minX)) { minX = -10; maxX = 10; minY = -10; maxY = 10; }
+        const padX = Math.max((maxX - minX) * 0.15, 1);
+        const padY = Math.max((maxY - minY) * 0.15, 1);
+        calc.setMathBounds({ left: minX - padX, right: maxX + padX, bottom: minY - padY, top: maxY + padY });
         allEqs.forEach(eq => calc.setExpression({ latex: eq }));
         showToast(t('toast_exported'), 'success');
       } catch (e) {

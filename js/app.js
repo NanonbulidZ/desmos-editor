@@ -144,6 +144,14 @@
     stats: loadStats()
   };
 
+  // ===== TRACE TOOL STATE =====
+  let traceImage = null;
+  let tracePoints = [];
+  let traceImageX = 0;
+  let traceImageY = 0;
+  let traceImageW = 0;
+  let traceImageH = 0;
+
   // ===== I18N =====
   let i18nData = {};
 
@@ -584,6 +592,72 @@
 
     drawGrid();
 
+    // Draw trace image
+    if (traceImage && state.tool === 'trace') {
+      const s = worldToScreen(traceImageX, traceImageY);
+      ctx.save();
+      ctx.globalAlpha = 0.4;
+      ctx.drawImage(traceImage, s.x, s.y, traceImageW * state.zoom, traceImageH * state.zoom);
+      ctx.restore();
+
+      // Draw trace points and lines
+      if (tracePoints.length > 0) {
+        ctx.save();
+        ctx.strokeStyle = state.color;
+        ctx.lineWidth = state.strokeWidth;
+        ctx.globalAlpha = 0.9;
+
+        // Draw lines between points
+        if (tracePoints.length >= 2) {
+          ctx.beginPath();
+          const s0 = worldToScreen(tracePoints[0].x, tracePoints[0].y);
+          ctx.moveTo(s0.x, s0.y);
+          for (let i = 1; i < tracePoints.length; i++) {
+            const sp = worldToScreen(tracePoints[i].x, tracePoints[i].y);
+            ctx.lineTo(sp.x, sp.y);
+          }
+          ctx.stroke();
+        }
+
+        // Preview line from last point to mouse
+        const lastPt = tracePoints[tracePoints.length - 1];
+        const sLast = worldToScreen(lastPt.x, lastPt.y);
+        const mouseWorld = screenToWorld(state.mouseX, state.mouseY);
+        const sMouse = worldToScreen(mouseWorld.x, mouseWorld.y);
+        ctx.setLineDash([6, 4]);
+        ctx.globalAlpha = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(sLast.x, sLast.y);
+        ctx.lineTo(sMouse.x, sMouse.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Draw dots
+        ctx.fillStyle = state.color;
+        tracePoints.forEach((pt, i) => {
+          const sp = worldToScreen(pt.x, pt.y);
+          ctx.beginPath();
+          ctx.arc(sp.x, sp.y, i === 0 ? 5 : 3, 0, Math.PI * 2);
+          ctx.fill();
+        });
+
+        // Close path preview (dotted line from last to first)
+        if (tracePoints.length >= 3) {
+          const sFirst = worldToScreen(tracePoints[0].x, tracePoints[0].y);
+          ctx.strokeStyle = '#5dade2';
+          ctx.setLineDash([4, 4]);
+          ctx.globalAlpha = 0.4;
+          ctx.beginPath();
+          ctx.moveTo(sLast.x, sLast.y);
+          ctx.lineTo(sFirst.x, sFirst.y);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+
+        ctx.restore();
+      }
+    }
+
     state.shapes.forEach((shape, i) => {
       drawShape(shape, ctx, state.selectedShape === i);
     });
@@ -775,6 +849,16 @@
         updateLayersList();
         render();
       }
+      return;
+    }
+
+    if (state.tool === 'trace') {
+      if (!traceImage) {
+        document.getElementById('traceFileInput').click();
+        return;
+      }
+      tracePoints.push({ x: world.x, y: world.y });
+      render();
       return;
     }
 
@@ -990,9 +1074,18 @@
       if (e.key === 'o') setTool('ellipse');
       if (e.key === 'e') setTool('erase');
       if (e.key === 'h') setTool('pan');
+      if (e.key === 't') setTool('trace');
       if (e.key === 'g') toggleGrid();
       if (e.key === 's') toggleSnap();
+      if (e.key === 'Enter' && state.tool === 'trace' && tracePoints.length >= 2) {
+        finishTrace();
+      }
       if (e.key === 'Escape') {
+        if (state.tool === 'trace' && tracePoints.length > 0) {
+          tracePoints = [];
+          render();
+          return;
+        }
         state.selectedShape = null;
         state.isDrawing = false;
         state.currentPath = [];
@@ -1083,12 +1176,16 @@
 
   // ===== TOOL MANAGEMENT =====
   function setTool(tool) {
+    if (state.tool === 'trace' && tool !== 'trace' && tracePoints.length > 0) {
+      tracePoints = [];
+      render();
+    }
     state.tool = tool;
     document.querySelectorAll('.tool-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.tool === tool);
     });
     canvas.style.cursor = getCursorForTool();
-    const toolNames = { select:'Select', pen:'Pen', line:'Line', rect:'Rectangle', ellipse:'Ellipse', erase:'Eraser', pan:'Pan', zoomIn:'Zoom In', zoomOut:'Zoom Out' };
+    const toolNames = { select:'Select', pen:'Pen', line:'Line', rect:'Rectangle', ellipse:'Ellipse', erase:'Eraser', pan:'Pan', zoomIn:'Zoom In', zoomOut:'Zoom Out', trace:'Image Trace' };
     trackEvent('tool', '🔧', `<strong>${toolNames[tool] || tool}</strong> tool selected`);
   }
 
@@ -1099,8 +1196,65 @@
       case 'erase': return 'crosshair';
       case 'zoomIn': return 'zoom-in';
       case 'zoomOut': return 'zoom-out';
+      case 'trace': return 'crosshair';
       default: return 'crosshair';
     }
+  }
+
+  // ===== TRACE TOOL =====
+  function finishTrace() {
+    if (tracePoints.length < 2) return;
+    pushUndo();
+    state.shapes.push({
+      type: 'path',
+      points: tracePoints.map(p => ({ x: p.x, y: p.y })),
+      color: state.color,
+      strokeWidth: state.strokeWidth,
+      fill: 'transparent',
+      opacity: state.opacity,
+      smooth: 0,
+      name: `Trace ${state.shapes.length + 1}`,
+      visible: true
+    });
+    state.stats.drawings++;
+    saveStats();
+    trackEvent('shape', '🖼', `Traced <strong>${tracePoints.length} points</strong> from image`);
+    tracePoints = [];
+    traceImage = null;
+    saveCanvasSnapshot();
+    updateLayersList();
+    render();
+    showToast('Trace complete! Shape created.', 'success');
+  }
+
+  function initTraceTool() {
+    const fileInput = document.getElementById('traceFileInput');
+    if (!fileInput) return;
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const img = new Image();
+      img.onload = () => {
+        traceImage = img;
+        tracePoints = [];
+        const imgAspect = img.width / img.height;
+        const maxDim = 400;
+        if (imgAspect >= 1) {
+          traceImageW = maxDim;
+          traceImageH = maxDim / imgAspect;
+        } else {
+          traceImageH = maxDim;
+          traceImageW = maxDim * imgAspect;
+        }
+        const center = screenToWorld(canvasWidth / 2, canvasHeight / 2);
+        traceImageX = center.x - traceImageW / 2;
+        traceImageY = center.y - traceImageH / 2;
+        showToast('Image loaded! Click points along the edges. Press Enter to finish.', 'success');
+        render();
+      };
+      img.src = URL.createObjectURL(file);
+      fileInput.value = '';
+    });
   }
 
   // ===== TOGGLE FUNCTIONS =====
@@ -1652,6 +1806,7 @@
   function init() {
     initCanvas();
     initInput();
+    initTraceTool();
     loadLanguage(state.lang);
     trackVisit();
     updateStatsDisplay();

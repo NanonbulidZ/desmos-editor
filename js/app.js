@@ -1303,7 +1303,7 @@
     const h = traceEdgeH;
     const edge = traceEdgeData;
 
-    // Trace the contour by walking edge pixels
+    // Trace contours by walking edge pixels
     const visited = new Uint8Array(w * h);
     const contours = [];
 
@@ -1327,11 +1327,11 @@
           }
           if (!found) break;
         }
-        if (contour.length >= 10) contours.push(contour);
+        if (contour.length >= 20) contours.push(contour);
       }
     }
 
-    // For each contour, find corners by angle change
+    // Score corners on each contour separately
     const cornerScore = (contour, i, lookBack, lookFwd) => {
       const len = contour.length;
       const p0 = contour[(i - lookBack + len) % len];
@@ -1344,44 +1344,56 @@
       return diff;
     };
 
-    const allCorners = [];
-    const threshold = 0.4;
-    const step = 3;
+    // For each contour, find corners, keep points IN CONTOUR ORDER
+    const allContourCorners = [];
+    const threshold = 0.35;
+    const step = 2;
 
     contours.forEach(contour => {
       const len = contour.length;
       const candidates = [];
       for (let i = 0; i < len; i += step) {
-        const score = cornerScore(contour, i, 8, 8);
+        const score = cornerScore(contour, i, 10, 10);
         if (score > threshold) {
           candidates.push({ idx: i, score });
         }
       }
-      // Non-maximum suppression
+      // Non-maximum suppression within this contour
       candidates.sort((a, b) => b.score - a.score);
       const kept = [];
       candidates.forEach(c => {
-        const minDist = 15;
-        if (kept.every(k => Math.abs(k.idx - c.idx) > minDist && Math.abs(k.idx - c.idx) < len - minDist)) {
+        const minDist = 12;
+        if (kept.every(k => {
+          const diff = Math.abs(k.idx - c.idx);
+          return diff > minDist && diff < len - minDist;
+        })) {
           kept.push(c);
         }
       });
-      kept.forEach(c => {
-        const p = contour[c.idx];
-        allCorners.push({
-          x: traceImageX + (p.x / w) * traceImageW,
-          y: traceImageY + (p.y / h) * traceImageH,
-          score: c.score
-        });
-      });
+      // Sort kept by index to maintain contour order
+      kept.sort((a, b) => a.idx - b.idx);
+      if (kept.length >= 3) {
+        allContourCorners.push(kept.map(c => {
+          const p = contour[c.idx];
+          return {
+            x: traceImageX + (p.x / w) * traceImageW,
+            y: traceImageY + (p.y / h) * traceImageH,
+            score: c.score
+          };
+        }));
+      }
     });
 
-    // Sort by score, take top corners
-    allCorners.sort((a, b) => b.score - a.score);
-    const maxPoints = 50;
-    tracePoints = allCorners.slice(0, maxPoints).map(c => ({ x: c.x, y: c.y }));
+    if (allContourCorners.length === 0) {
+      showToast('No edges detected. Try a higher-contrast image.', 'error');
+      return;
+    }
 
-    showToast(`Auto-detected ${tracePoints.length} corners. Drag to adjust, Enter to finish.`, 'success');
+    // Pick the contour with the most corners
+    allContourCorners.sort((a, b) => b.length - a.length);
+    tracePoints = allContourCorners[0];
+
+    showToast(`Found ${tracePoints.length} corners. Drag to adjust, Enter to finish.`, 'success');
     render();
   }
 
